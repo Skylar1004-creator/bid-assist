@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "cleanUrls": true,
   "functions": {
     "api/lookup.js": {
       "memory": 1024,
@@ -9,9 +10,11 @@
   "headers": [
     {
       "source": "/api/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-store" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=60" }]
     }
   ]
 }

@@ -74,9 +74,21 @@ const server = http.createServer(async (req, res) => {
 
     let pathname = decodeURIComponent(url.pathname);
     if (pathname === "/") pathname = "/index.html";
-    const filePath = path.normalize(path.join(__dirname, pathname));
-    if (!filePath.startsWith(__dirname)) {
-      return send(res, 403, "Forbidden");
+    const publicPath = path.normalize(path.join(__dirname, "public", pathname));
+    const rootPath = path.normalize(path.join(__dirname, pathname));
+    const publicRoot = path.normalize(path.join(__dirname, "public"));
+    let filePath = null;
+    if (publicPath.startsWith(publicRoot)) {
+      try {
+        await fs.access(publicPath);
+        filePath = publicPath;
+      } catch {
+        /* fall through */
+      }
+    }
+    if (!filePath) {
+      if (!rootPath.startsWith(__dirname)) return send(res, 403, "Forbidden");
+      filePath = rootPath;
     }
 
     const data = await fs.readFile(filePath);

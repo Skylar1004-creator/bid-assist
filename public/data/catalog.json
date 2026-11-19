@@ -1,0 +1,117 @@
+[
+  {
+    "title": "김해삼계중학교 외 1교(월산중학교) 석면 농도 및 비산정도 측정용역 수의계약 안내 공고",
+    "agency": "경상남도교육청 경상남도김해교육지원청",
+    "method": "소액수의견적",
+    "baseAmount": 26763000,
+    "floorRate": 0.88,
+    "region": "경남",
+    "kind": "석면농도·비산측정",
+    "refNo": "R25BK01155700",
+    "noticeKey": "R25BK01155700"
+  },
+  {
+    "title": "(계속비)대전버드내초 본동 석면철거공사 석면농도 및 비산정도 측정용역",
+    "agency": "대전광역시교육청 대전광역시동부교육지원청",
+    "method": "소액수의견적",
+    "baseAmount": 16247000,
+    "floorRate": 0.9,
+    "region": "기타",
+    "kind": "석면농도·비산측정",
+    "refNo": "R25BK01159583",
+    "noticeKey": "R25BK01159583"
+  },
+  {
+    "title": "수원농생명과학고 체조체육관 및 관악부연습실 석면해체 연계 통신공사",
+    "agency": "경기도교육청 경기도수원교육지원청",
+    "method": "소액수의견적-소액수의견적(2인",
+    "baseAmount": 45910000,
+    "floorRate": 0.8974500000000001,
+    "region": "경기",
+    "kind": "석면해체전측정",
+    "refNo": "R26BK01588631",
+    "noticeKey": "suwon-asbestos-pre"
+  },
+  {
+    "title": "김해동광초등학교 석면농도 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "경상남도교육청 경상남도김해교육지원청",
+    "method": "수의·소액수의견적",
+    "baseAmount": 13684000,
+    "floorRate": 0.9,
+    "region": "경남",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01578429",
+    "noticeKey": "gimhae-donggwang-asbestos",
+    "presmptPrce": 12440000,
+    "awardAmount": 13150324,
+    "awardRate": 0.94539,
+    "awardedAt": "2026-06-22",
+    "note": "개찰완료 · 낙찰 미래환경기술원 · 예정가 13,909,925"
+  },
+  {
+    "title": "팔달중학교 본관동 석면농도 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "수원시교육지원청",
+    "method": "수의·추첨",
+    "baseAmount": 4200000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01839679",
+    "noticeKey": "paldal-ms-asbestos"
+  },
+  {
+    "title": "반월중학교 본관 석면농도측정 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "화성오산교육지원청",
+    "method": "수의·추첨",
+    "baseAmount": 3900000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01839551",
+    "noticeKey": "banwol-ms-asbestos"
+  },
+  {
+    "title": "능동중학교 석면농도 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "화성오산교육지원청",
+    "method": "수의·추첨",
+    "baseAmount": 4100000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01835395",
+    "noticeKey": "neungdong-ms-asbestos"
+  },
+  {
+    "title": "화성초등학교 본관동 석면농도 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "화성오산교육지원청",
+    "method": "수의·추첨",
+    "baseAmount": 4500000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01834012",
+    "noticeKey": "hwaseong-es-asbestos"
+  },
+  {
+    "title": "와우초등학교 석면농도 및 비산정도 측정용역 수의계약 안내공고",
+    "agency": "화성오산교육지원청",
+    "method": "수의·추첨",
+    "baseAmount": 3800000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26BK01833880",
+    "noticeKey": "wau-es-asbestos"
+  },
+  {
+    "title": "경기도청 옛청사(제1별관 등) 석면농도 및 비산정도 측정 용역",
+    "agency": "경기도",
+    "method": "추첨",
+    "baseAmount": 28600000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "refNo": "R26GG00000001",
+    "noticeKey": "gg-old-hall-asbestos"
+  }
+]

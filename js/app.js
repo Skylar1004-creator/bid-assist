@@ -474,8 +474,8 @@ function setExample() {
 
 async function loadData() {
   const [historyRes, catalogRes] = await Promise.all([
-    fetch("./data/history.json"),
-    fetch("./data/catalog.json"),
+    fetch("/data/history.json"),
+    fetch("/data/catalog.json"),
   ]);
   if (!historyRes.ok) throw new Error("이력 데이터를 불러오지 못했습니다.");
   const historyDoc = await historyRes.json();
