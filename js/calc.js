@@ -409,12 +409,23 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
 
   const pct = (n) => `${(n * 100).toFixed(2)}%`;
   const rateNote = usedPlanned ? "예정가×사정률" : "기초×사정률(예정가 미입력)";
+  const floorRate = notice.floorRate || 0;
 
-  const flag = (bid) => {
-    if (bid == null) return { kind: "warn", text: "표본 부족 · 참고 불가" };
-    if (floor > 0 && bid < floor) return { kind: "danger", text: "공고 하한 미만 · 무효 위험" };
-    if (cost > 0 && bid < minOk) return { kind: "warn", text: "최소 수용 마진 미달" };
-    return { kind: "ok", text: "하한·원가 조건 충족" };
+  const flag = (bid, planId) => {
+    if (bid == null) return { kind: "warn", text: "표본 부족 · 맹신 금지" };
+    if (floor > 0 && bid < floor) return { kind: "danger", text: "하한 미만 · 무효" };
+    if (cost > 0 && bid < minOk) return { kind: "warn", text: "원가·마진 미달" };
+    const rate = ref > 0 ? bid / ref : null;
+    if (rate != null && floorRate > 0 && rate < floorRate) {
+      return { kind: "danger", text: "사정률 < 하한율" };
+    }
+    if (!usedPlanned) return { kind: "warn", text: "예정가 미입력 · 참고만" };
+    if (planId === "A" && kindCases.length < 3) return { kind: "warn", text: "표본 빈약" };
+    if (planId === "B" && yearCases.length < 3) return { kind: "warn", text: "1년 표본 빈약" };
+    if (planId === "C" && String(samePack.scope || "").startsWith("유사")) {
+      return { kind: "warn", text: "동일공고 아님 · 유사만" };
+    }
+    return { kind: "ok", text: "하한·원가 통과 · 대조 필요" };
   };
 
   return {
@@ -442,10 +453,10 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         name: "동일종류 낙찰",
         why: kindOk
           ? `${kindPack.scope} ${kindCases.length}건 · 사정률(예정가 대비) 중앙값 ${pct(kindP50)} · ${rateNote}`
-          : "동일·유사 종류 낙찰 표본이 없습니다.",
+          : "동일·유사 종류 낙찰 표본이 없습니다. 이 안을 쓰지 마세요.",
         bid: bidA,
         range: rangeA,
-        flag: flag(bidA),
+        flag: flag(bidA, "A"),
         disabled: !kindOk,
       },
       {
@@ -453,10 +464,10 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         name: "1년 고확률 구간",
         why: bandOk
           ? `${year.scope} ${year.yearCases.length}건 · 구간 ${pct(year.band[0])}~${pct(year.band[1])} · ${rateNote}`
-          : `최근 1년 ${notice.kind || "해당 종류"} 표본이 없습니다.`,
+          : `최근 1년 ${notice.kind || "해당 종류"} 표본이 없습니다. 이 안을 쓰지 마세요.`,
         bid: bidB,
         range: rangeB,
-        flag: flag(bidB),
+        flag: flag(bidB, "B"),
         disabled: !bandOk,
       },
       {
@@ -467,11 +478,11 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
             ? same.length === 1
               ? `동일 공고 직전 낙찰 사정률(예정가 대비) ${pct(latest.rate)} (${latest.awardedAt || "-"}) · ${rateNote}`
               : `동일·재공고 낙찰 ${same.length}건 중앙값 ${pct(sameP50)} · ${rateNote}`
-            : `유사 측정 낙찰 ${same.length}건 사정률 중앙값 ${pct(sameP50)} · ${rateNote}`
-          : "동일·유사 공고 낙찰 이력이 없습니다.",
+            : `유사 낙찰 ${same.length}건 사정률 중앙값 ${pct(sameP50)} · ${rateNote} · 동일공고 아님`
+          : "동일·유사 공고 낙찰 이력이 없습니다. 이 안을 쓰지 마세요.",
         bid: bidC,
         range: rangeC,
-        flag: flag(bidC),
+        flag: flag(bidC, "C"),
         disabled: !sameOk,
       },
     ],

@@ -477,6 +477,77 @@ tbody tr:last-child td {
   color: var(--danger);
 }
 
+.critique-box {
+  border-radius: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  background: #faf8f5;
+}
+
+.critique-box.tone-ok {
+  border-color: #b7d4bf;
+  background: #f3f8f4;
+}
+
+.critique-box.tone-caution {
+  border-color: #e0c49a;
+  background: var(--warn-bg);
+}
+
+.critique-box.tone-reject {
+  border-color: #e0a8a8;
+  background: var(--danger-bg);
+}
+
+.critique-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.critique-score {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.critique-headline {
+  margin: 0 0 10px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.critique-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 8px;
+}
+
+.critique-list li {
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.critique-list .lvl-danger {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.critique-list .lvl-warn {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.critique-rec {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .decide-row {
   display: flex;
   flex-wrap: wrap;

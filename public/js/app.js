@@ -6,6 +6,7 @@ import {
   resolveNoticeKind,
 } from "./calc.js";
 import { bizNoMatch, looksLikeBizNo, normalizeBizNo } from "./biz-no.js";
+import { critiqueCalc, critiqueLevelLabel } from "./critique.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -38,6 +39,8 @@ const els = {
   historyBody: document.getElementById("historyBody"),
   historyTabs: document.getElementById("historyTabs"),
   planGrid: document.getElementById("planGrid"),
+  critiqueBox: document.getElementById("critiqueBox"),
+  critiqueHint: document.getElementById("critiqueHint"),
   decisionSource: document.getElementById("decisionSource"),
   finalBid: document.getElementById("finalBid"),
   decisionMemo: document.getElementById("decisionMemo"),
@@ -188,6 +191,41 @@ function renderHistory(calc, notice) {
     .join("");
 }
 
+function renderCritique(notice, calc) {
+  if (!els.critiqueBox) return;
+  const inputs = readInputs();
+  const c = critiqueCalc(notice, calc, {
+    finalBid: Number(els.finalBid.value) || null,
+    source: els.decisionSource.value,
+    cost: inputs.cost,
+    minMarginPct: inputs.minMargin,
+  });
+  state.critique = c;
+  if (els.critiqueHint) {
+    els.critiqueHint.textContent = `신뢰점수 ${c.score} · ${critiqueLevelLabel(c.tone)}`;
+  }
+  const list =
+    c.issues.length === 0
+      ? `<li>치명·주의 이의 없음. 그래도 예정가·하한·원문은 직접 대조하세요.</li>`
+      : c.issues
+          .map(
+            (i) =>
+              `<li class="lvl-${i.level === "caution" ? "warn" : i.level}"><strong>[${
+                i.level === "danger" ? "위험" : i.level === "warn" ? "경고" : "주의"
+              }]</strong> ${i.text}</li>`,
+          )
+          .join("");
+  els.critiqueBox.className = `critique-box tone-${c.tone}`;
+  els.critiqueBox.innerHTML = `
+    <div class="critique-head">
+      <span class="critique-score">${critiqueLevelLabel(c.tone)} · ${c.score}점</span>
+    </div>
+    ${c.headlines.map((h) => `<p class="critique-headline">${h}</p>`).join("")}
+    <ul class="critique-list">${list}</ul>
+    <p class="critique-rec"><strong>권고</strong> · ${c.recommendation}</p>
+  `;
+}
+
 function renderPlans(plans) {
   state.plans = plans;
   els.planGrid.innerHTML = plans
@@ -219,7 +257,10 @@ function renderPlans(plans) {
       state.historyTab = tabMap[input.value] || state.historyTab;
       syncFinalFromSource();
       renderPlans(state.plans);
-      if (state.calc) renderHistory(state.calc, readNotice());
+      if (state.calc) {
+        renderHistory(state.calc, readNotice());
+        renderCritique(readNotice(), state.calc);
+      }
     });
   });
 }
@@ -312,6 +353,7 @@ function refresh() {
   renderHistory(calc, notice);
   renderPlans(calc.plans);
   if (els.decisionSource.value !== "custom") syncFinalFromSource();
+  renderCritique(notice, calc);
 
   const n = state.history.length;
   const src = state.historyMeta.source === "openapi" ? "OpenAPI" : "샘플";
@@ -561,7 +603,17 @@ function bind() {
     }
     syncFinalFromSource();
     renderPlans(state.plans);
-    if (state.calc) renderHistory(state.calc, readNotice());
+    if (state.calc) {
+      renderHistory(state.calc, readNotice());
+      renderCritique(readNotice(), state.calc);
+    }
+  });
+
+  els.finalBid.addEventListener("input", () => {
+    if (state.calc) renderCritique(readNotice(), state.calc);
+  });
+  els.finalBid.addEventListener("change", () => {
+    if (state.calc) renderCritique(readNotice(), state.calc);
   });
 
   els.saveBtn.addEventListener("click", async () => {
@@ -575,6 +627,16 @@ function bind() {
       els.saveMsg.textContent = "확정 투찰가를 입력해 주세요.";
       return;
     }
+    if (state.calc) renderCritique(notice, state.calc);
+    if (state.critique?.tone === "reject") {
+      const ok = window.confirm(
+        "전문가 이의제기가 ‘반려 수준’입니다.\n하한 미만·표본 없음·마진 붕괴 등이 있습니다.\n그래도 저장할까요?",
+      );
+      if (!ok) {
+        els.saveMsg.textContent = "저장 취소 · 이의제기 항목을 먼저 고치세요.";
+        return;
+      }
+    }
     const payload = {
       noticeId: notice.noticeKey || notice.title,
       title: notice.title,
@@ -583,6 +645,8 @@ function bind() {
       source: els.decisionSource.value,
       amount,
       memo: els.decisionMemo.value.trim(),
+      critiqueScore: state.critique?.score ?? null,
+      critiqueTone: state.critique?.tone ?? null,
       savedAt: new Date().toISOString(),
     };
 

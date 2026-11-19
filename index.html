@@ -168,15 +168,23 @@
         <section class="panel plans" aria-labelledby="plansTitle">
           <div class="panel-head">
             <h2 id="plansTitle">산정 기준 3안</h2>
-            <p class="hint">확률·이력을 비교한 참고가입니다. 최종은 담당자가 고릅니다.</p>
+            <p class="hint">참고가입니다. 아래 전문가 이의제기를 읽고 최종을 고르세요.</p>
           </div>
           <div class="plan-grid" id="planGrid" role="radiogroup" aria-label="산정안 선택"></div>
+        </section>
+
+        <section class="panel critique" aria-labelledby="critiqueTitle">
+          <div class="panel-head">
+            <h2 id="critiqueTitle">전문가 이의제기</h2>
+            <p class="hint" id="critiqueHint">근거가 이상하면 돌려 말하지 않습니다.</p>
+          </div>
+          <div id="critiqueBox" class="critique-box" role="status" aria-live="polite"></div>
         </section>
 
         <section class="panel decide" aria-labelledby="decideTitle">
           <div class="panel-head">
             <h2 id="decideTitle">최종 결정</h2>
-            <p class="hint">자동 투찰 없음. 확정가만 저장합니다.</p>
+            <p class="hint">자동 투찰 없음. 확정가만 저장합니다. 이의제기를 무시하면 본인 책임입니다.</p>
           </div>
           <div class="decide-row">
             <label class="field">
