@@ -134,12 +134,16 @@ export function buildVerdict(notice, calc, opts = {}) {
       });
       return;
     }
+    // 원가 미달은 탈락이 아니라 경고 — 금액 1개는 그래도 보여 준다
     if (minOk > 0 && row.bid < minOk) {
-      rejected.push({
-        id: row.id,
-        reason: `금액 ${won(row.bid)} < 원가수용선 ${won(minOk)} → 적자`,
-      });
-      return;
+      row.costRisk = true;
+      row.evidence = [
+        ...(row.evidence || []),
+        {
+          type: "cost-risk",
+          text: `원가수용선 ${won(minOk)} 미만 · 이기면 적자 가능`,
+        },
+      ];
     }
     if (!row.evidence?.length) {
       rejected.push({ id: row.id, reason: "객관 근거 목록이 비어 추천 불가" });
@@ -465,12 +469,13 @@ export function buildVerdict(notice, calc, opts = {}) {
     anchorPlanId: best.id,
     confidence,
     judgment: ai.judgment,
-    headline: `AI 투찰가 ${won(finalBid)} · 신뢰 ${confidence}`,
+    headline: `AI 선정 ${won(finalBid)} · 신뢰 ${confidence}`,
     evidence: [baseCite, ...aggEvidence, ...best.evidence.filter((e) => e.type !== "base")],
     rejected: whyNotOthers,
     method: "AI",
     hardFloor,
     mode,
+    costRisk: Boolean(ai.costRisk),
     aggregation: agg,
     ai,
     scored: candidates.map((c) => ({

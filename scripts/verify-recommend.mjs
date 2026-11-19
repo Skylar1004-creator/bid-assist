@@ -73,12 +73,9 @@ const asOf = new Date("2026-11-19");
   const cost = 20_000_000;
   const calc = calcPlans(notice, hist, { asOf, cost, minMarginPct: 10 });
   const v = buildVerdict(notice, calc, { cost, minMarginPct: 10 });
-  if (v.status === "ready") {
-    assert(v.bid >= cost * 1.1, "ready면 원가수용선 이상");
-  } else {
-    assert(v.status === "blocked", "전원 적자면 blocked");
-  }
-  console.log("cost-gate", v.status, v.bid);
+  assert(v.status === "ready", "원가 미달이어도 선정 금액은 표시");
+  assert(v.ai?.costRisk || v.bid < cost * 1.1, "적자 경고 표기");
+  console.log("cost-gate", v.status, v.bid, "costRisk", v.ai?.costRisk);
 }
 
 if (process.exitCode) {

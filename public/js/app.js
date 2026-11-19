@@ -287,7 +287,8 @@ function renderVerdict(notice, calc) {
     return;
   }
 
-  els.verdictBox.className = "verdict-box is-ready";
+  const costRisk = Boolean(v.ai?.costRisk);
+  els.verdictBox.className = `verdict-box is-ready${costRisk ? " is-cost-risk" : ""}`;
   const agg = v.aggregation;
   const ai = v.ai || {};
   const conf = Math.max(0, Math.min(100, v.confidence || 0));
@@ -315,8 +316,14 @@ function renderVerdict(notice, calc) {
 
   const applyPlan = v.anchorPlanId || "D";
   els.verdictBox.innerHTML = `
-    <p class="verdict-bid">${won(v.bid)}</p>
+    <p class="verdict-kicker">AI가 고른 투찰가 · 1개</p>
+    <p class="verdict-bid" id="aiSelectedBid">${won(v.bid)}</p>
     <p class="verdict-head">${v.judgment || v.headline}</p>
+    ${
+      costRisk
+        ? `<p class="verdict-warn" role="alert">원가·마진 수용선보다 낮습니다. 금액은 선정됐지만 적자 위험이 있습니다. 실행원가를 확인하세요.</p>`
+        : ""
+    }
     <div class="trust" aria-label="신뢰도 ${conf}">
       <div class="trust-bar"><span style="width:${conf}%"></span></div>
       <span class="trust-label">신뢰 ${conf}</span>
@@ -529,6 +536,13 @@ function refresh() {
   applyInference();
   saveDraft();
   const notice = readNotice();
+  // 기초≪원가(이전 공고 잔존)면 원가를 기초 기준으로 자동 보정
+  if (notice.baseAmount > 0) {
+    const costNow = Number(els.costInput.value) || 0;
+    if (costNow <= 0 || costNow > notice.baseAmount * 1.35) {
+      els.costInput.value = String(Math.round(notice.baseAmount * 0.85));
+    }
+  }
   const inputs = readInputs();
   const calc = calcPlans(notice, state.history, {
     cost: inputs.cost,
@@ -594,7 +608,8 @@ function applyNotice(n) {
   if (n.kind) els.kindInput.value = n.kind;
   els.noticeKeyInput.value = n.noticeKey || n.refNo || n.bidNtceNo || "";
   delete els.noticeKeyInput.dataset.manual;
-  if (n.baseAmount != null && !n.baseIsProxy) {
+  // 기초가 바뀌면 원가도 맞춘다(이전 공고 원가가 남아 AI 추천이 전부 적자로 막히는 것 방지)
+  if (n.baseAmount != null && n.baseAmount > 0) {
     els.costInput.value = String(Math.round(n.baseAmount * 0.85));
   }
   if (!els.minMarginInput.value) els.minMarginInput.value = "4";

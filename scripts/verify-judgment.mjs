@@ -74,7 +74,7 @@ assert(agreementScore([100, 110], 100) < 0.5, "합의 낮음");
 }
 
 {
-  const bad = aiFinalize({
+  const warn = aiFinalize({
     base: 10_000_000,
     ref: 10_000_000,
     hardFloor: 9_000_000,
@@ -84,7 +84,8 @@ assert(agreementScore([100, 110], 100) < 0.5, "합의 낮음");
     histBids: [],
     anchorBid: 9_100_000,
   });
-  assert(!bad.ok, "원가선 미달 거부");
+  assert(warn.ok && warn.costRisk, "원가선 미달해도 금액은 선정·경고");
+  assert(warn.bid >= 9_000_000, "하한 이상 금액 유지");
 }
 
 if (process.exitCode) {

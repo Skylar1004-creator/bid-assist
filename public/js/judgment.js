@@ -242,14 +242,12 @@ export function aiFinalize(input) {
     raw = Math.ceil(hardFloor);
     reasons.push("실질하한 미만 → 하한으로 보정");
   }
+  let costRisk = false;
   if (minOk > 0 && raw < minOk) {
-    // 원가선 미달이면 판정 거부(적자 투찰 강요 안 함)
-    return {
-      ok: false,
-      reason: `원가수용선 미달 가능 (${Math.round(raw).toLocaleString("ko-KR")} < ${Math.round(minOk).toLocaleString("ko-KR")})`,
-      reasons,
-      bid: null,
-    };
+    costRisk = true;
+    reasons.push(
+      `원가수용선 미달 경고 (${Math.round(raw).toLocaleString("ko-KR")} < ${Math.round(minOk).toLocaleString("ko-KR")}) · 금액은 산정하되 적자 위험`,
+    );
   }
 
   // floorHug가 있고 선정형인데 너무 멀면 경고만 (금액은 유지)
@@ -275,24 +273,26 @@ export function aiFinalize(input) {
   if (hardFloor > 0 && vsFloorWon != null && vsFloorWon >= 0 && vsFloorWon / (ref || base) <= 0.005) {
     confidence += 5;
   }
+  if (costRisk) confidence -= 18;
   confidence = Math.round(clamp(confidence, 20, 97));
 
   const judgment =
     mode === "low"
-      ? `선정형 판정: 무효를 피하면서 낮은 쪽을 택했습니다. 기초 대비 ${
+      ? `선정 투찰가 ${bid.toLocaleString("ko-KR")}원 · 무효 피하며 낮은 쪽. 기초 대비 ${
           vsBasePct == null ? "—" : `${(vsBasePct * 100).toFixed(3)}%`
         }, 하한 위 ${
           vsFloorWon == null ? "—" : `${Math.round(vsFloorWon).toLocaleString("ko-KR")}원`
-        }.`
-      : `적격형 판정: 합의 구간의 중앙을 택했습니다. 기초 대비 ${
+        }.${costRisk ? " 원가선 미달·적자 위험." : ""}`
+      : `선정 투찰가 ${bid.toLocaleString("ko-KR")}원 · 합의 중앙. 기초 대비 ${
           vsBasePct == null ? "—" : `${(vsBasePct * 100).toFixed(3)}%`
-        }.`;
+        }.${costRisk ? " 원가선 미달·적자 위험." : ""}`;
 
   return {
     ok: true,
     bid,
     confidence,
     judgment,
+    costRisk,
     reasons,
     agree,
     cluster,
