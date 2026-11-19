@@ -7,8 +7,6 @@ import {
 } from "./calc.js";
 import { bizNoMatch, looksLikeBizNo, normalizeBizNo } from "./biz-no.js";
 import { critiqueCalc, critiqueLevelLabel } from "./critique.js";
-import { buildVerdict } from "./recommend.js";
-import { baseSourceLabel } from "./base-amount.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -28,7 +26,6 @@ const els = {
   agencyInput: document.getElementById("agencyInput"),
   methodInput: document.getElementById("methodInput"),
   baseInput: document.getElementById("baseInput"),
-  estimateInput: document.getElementById("estimateInput"),
   plannedInput: document.getElementById("plannedInput"),
   floorRateInput: document.getElementById("floorRateInput"),
   yegaHintInput: document.getElementById("yegaHintInput"),
@@ -46,7 +43,6 @@ const els = {
   historyBody: document.getElementById("historyBody"),
   historyTabs: document.getElementById("historyTabs"),
   planGrid: document.getElementById("planGrid"),
-  verdictBox: document.getElementById("verdictBox"),
   critiqueBox: document.getElementById("critiqueBox"),
   critiqueHint: document.getElementById("critiqueHint"),
   decisionSource: document.getElementById("decisionSource"),
@@ -65,10 +61,7 @@ const state = {
   historyTab: "kind",
   calc: null,
   plans: [],
-  verdict: null,
-  lockFinal: false,
   autoInfer: true,
-  baseMeta: { baseSource: "manual", baseIsProxy: false, estimateAmount: null, budgetAmount: null },
   draftKey: "bid-assist-notice-draft",
   lookupTimer: null,
 };
@@ -82,9 +75,6 @@ function readNotice() {
   const agency = (els.agencyInput.value || "").trim();
   const method = (els.methodInput.value || "").trim() || "추첨";
   const baseAmount = Number(els.baseInput.value) || 0;
-  const estimateRaw = Number(els.estimateInput?.value);
-  const estimateAmount =
-    Number.isFinite(estimateRaw) && estimateRaw > 0 ? estimateRaw : state.baseMeta.estimateAmount;
   const plannedRaw = Number(els.plannedInput?.value);
   const plannedAmount = Number.isFinite(plannedRaw) && plannedRaw > 0 ? plannedRaw : null;
   const floorPct = Number(els.floorRateInput.value);
@@ -100,24 +90,12 @@ function readNotice() {
   const noticeKey =
     (els.noticeKeyInput.value || "").trim() || inferNoticeKey(title, agency) || null;
 
-  // 사용자가 기초 칸을 고치면 수동으로 간주(대리값 해제)
-  const typedBase = Number(els.baseInput.value) || 0;
-  const stillProxy =
-    state.baseMeta.baseIsProxy &&
-    typedBase > 0 &&
-    state.baseMeta.proxyAmount != null &&
-    Math.abs(typedBase - state.baseMeta.proxyAmount) < 1;
-
   return {
     id: "user-notice",
     title: title || "(공고명 미입력)",
     agency: agency || "-",
     method,
     baseAmount,
-    estimateAmount: estimateAmount || null,
-    budgetAmount: state.baseMeta.budgetAmount || null,
-    baseSource: stillProxy ? state.baseMeta.baseSource : typedBase > 0 ? "manual" : null,
-    baseIsProxy: stillProxy,
     plannedAmount,
     floorRate,
     yegaRateHint,
@@ -133,6 +111,8 @@ function readNotice() {
 }
 
 function renderNoticeLive(notice, calc) {
+  const floorAmt = notice.baseAmount * notice.floorRate;
+  const ref = notice.plannedAmount || notice.baseAmount;
   const yega =
     calc?.yegaFromNotice != null
       ? calc.yegaFromNotice
@@ -140,18 +120,7 @@ function renderNoticeLive(notice, calc) {
         ? calc.yegaRate
         : null;
   const floorHug = calc?.formula?.recommended?.bid;
-  const baseLabel = baseSourceLabel(notice.baseSource, notice.baseIsProxy);
-  const proxyWarn = notice.baseIsProxy
-    ? `<div class="metric danger"><span class="label">기초 경고</span><span class="value">추정·예산 대리값 — 인포21C와 어긋남</span></div>`
-    : "";
   els.noticeDetail.innerHTML = `
-    ${proxyWarn}
-    <div class="metric"><span class="label">기초금액</span><span class="value">${
-      notice.baseAmount ? `${won(notice.baseAmount)} · ${baseLabel}` : "-"
-    }</span></div>
-    <div class="metric"><span class="label">추정가격(참고)</span><span class="value">${
-      notice.estimateAmount ? won(notice.estimateAmount) : "-"
-    }</span></div>
     <div class="metric"><span class="label">업무·업종</span><span class="value">${
       notice.category || "-"
     }${notice.industry ? ` · ${notice.industry}` : ""}</span></div>
@@ -160,15 +129,18 @@ function renderNoticeLive(notice, calc) {
     <div class="metric"><span class="label">투찰마감</span><span class="value">${
       notice.deadline || "-"
     }</span></div>
+    <div class="metric"><span class="label">기초×하한(단순)</span><span class="value">${
+      notice.baseAmount && notice.floorRate ? won(floorAmt) : "-"
+    }</span></div>
     <div class="metric"><span class="label">예가사정율</span><span class="value">${
       yega == null ? "-" : `${(yega * 100).toFixed(3)}%`
     }</span></div>
-    <div class="metric"><span class="label">하한밀착(기초×예가×하한)</span><span class="value">${
+    <div class="metric"><span class="label">하한밀착(D)</span><span class="value">${
       floorHug != null ? won(floorHug) : "-"
     }</span></div>
-    <div class="metric"><span class="label">예정·기준액</span><span class="value">${
-      calc?.refAmount
-        ? `${won(calc.refAmount)}${notice.plannedAmount ? " (예정가)" : " (기초×예가)"}`
+    <div class="metric"><span class="label">산정 기준액</span><span class="value">${
+      ref
+        ? `${won(ref)}${notice.plannedAmount ? " (예정가)" : " (기초·예정가 미입력)"}`
         : "-"
     }</span></div>
     <div class="metric"><span class="label">A값 / 순공사</span><span class="value">${
@@ -254,109 +226,6 @@ function renderHistory(calc, notice) {
       </tr>`;
     })
     .join("");
-}
-
-function renderVerdict(notice, calc) {
-  if (!els.verdictBox) return;
-  const v = buildVerdict(notice, calc);
-  state.verdict = v;
-
-  if (v.status === "blocked") {
-    els.verdictBox.className = "verdict-box is-blocked";
-    els.verdictBox.innerHTML = `
-      <p class="verdict-bid">추천 없음</p>
-      <p class="verdict-head">${v.headline}</p>
-      <ul class="verdict-evidence">${v.evidence.map((e) => `<li>${e.text}</li>`).join("")}</ul>
-      <ul class="verdict-rejected">${(v.rejected || [])
-        .map((r) => `<li><strong>${r.id}</strong> · ${r.reason}</li>`)
-        .join("")}</ul>
-    `;
-    return;
-  }
-
-  els.verdictBox.className = "verdict-box is-ready";
-  const agg = v.aggregation;
-  const ai = v.ai || {};
-  const conf = Math.max(0, Math.min(100, v.confidence || 0));
-  const aggRows = (agg?.rows || [])
-    .slice(0, 14)
-    .map(
-      (r) => `
-      <tr>
-        <td>${r.id}</td>
-        <td>${r.name}</td>
-        <td class="num">${won(r.bid)}</td>
-        <td class="num">${r.vsBaseLabel || "-"}</td>
-        <td class="num">${r.vsFloorLabel || "-"}</td>
-        <td class="num">${r.weight}</td>
-      </tr>`,
-    )
-    .join("");
-  const steps = (ai.reasons || [])
-    .map((t) => `<li>${t}</li>`)
-    .join("");
-  const ev = v.evidence
-    .filter((e) => !["ai", "ai-step"].includes(e.type))
-    .map((e) => `<li><span class="tag">${e.type}</span> ${e.text}</li>`)
-    .join("");
-
-  const applyPlan = v.anchorPlanId || "D";
-  els.verdictBox.innerHTML = `
-    <p class="verdict-kicker">AI가 고른 투찰가 · 1개</p>
-    <p class="verdict-bid" id="aiSelectedBid">${won(v.bid)}</p>
-    <p class="verdict-head">${v.judgment || v.headline}</p>
-    <div class="trust" aria-label="신뢰도 ${conf}">
-      <div class="trust-bar"><span style="width:${conf}%"></span></div>
-      <span class="trust-label">신뢰 ${conf}</span>
-    </div>
-    <p class="verdict-meta">${
-      v.mode === "low" ? "선정형(낮을수록 유리)" : "적격형"
-    } · 하한 ${won(v.hardFloor)} · 합의 ${(
-      (ai.agree || 0) * 100
-    ).toFixed(0)}%${
-      ai.tick ? ` · 전략틱 ${won(ai.tick)}` : ""
-    }${agg?.vsBaseLabel ? ` · 기초대비 ${agg.vsBaseLabel}` : ""}</p>
-    <button type="button" class="btn primary" id="applyVerdictBtn">이 금액으로 간다</button>
-    <details class="verdict-details">
-      <summary>판정 과정 · 취합 · 근거</summary>
-      <h3 class="verdict-sub">AI 판단 단계</h3>
-      <ul class="verdict-evidence">${steps || "<li>단계 없음</li>"}</ul>
-      <h3 class="verdict-sub">취합 · 기초 대비 ±</h3>
-      <div class="table-wrap">
-        <table class="agg-table" aria-label="취합 기초대비">
-          <thead>
-            <tr>
-              <th>출처</th>
-              <th>항목</th>
-              <th class="num">금액</th>
-              <th class="num">기초대비 ±</th>
-              <th class="num">하한대비 ±</th>
-              <th class="num">가중</th>
-            </tr>
-          </thead>
-          <tbody>${aggRows}</tbody>
-        </table>
-      </div>
-      <h3 class="verdict-sub">객관 근거</h3>
-      <ul class="verdict-evidence">${ev}</ul>
-    </details>
-  `;
-
-  const applyAi = () => {
-    els.decisionSource.value = applyPlan;
-    state.selectedPlan = applyPlan;
-    els.finalBid.value = String(Math.round(v.bid));
-    state.lockFinal = false;
-    renderPlans(state.plans);
-    renderCritique(readNotice(), state.calc);
-  };
-
-  els.verdictBox.querySelector("#applyVerdictBtn")?.addEventListener("click", applyAi);
-
-  // AI 판정을 기본으로 확정칸에 넣음 (직접입력 잠금 아니면)
-  if (!state.lockFinal) {
-    applyAi();
-  }
 }
 
 function renderCritique(notice, calc) {
@@ -523,16 +392,8 @@ function refresh() {
 
   renderNoticeLive(notice, calc);
   renderHistory(calc, notice);
-  renderVerdict(notice, calc);
   renderPlans(calc.plans);
-  // 신 판정이 ready면 확정칸은 renderVerdict가 채움. blocked·직접입력이면 보조안 동기화.
-  if (
-    state.verdict?.status !== "ready" &&
-    els.decisionSource.value !== "custom" &&
-    !state.lockFinal
-  ) {
-    syncFinalFromSource();
-  }
+  if (els.decisionSource.value !== "custom") syncFinalFromSource();
   renderCritique(notice, calc);
 
   const n = state.history.length;
@@ -550,17 +411,6 @@ function applyNotice(n) {
   els.agencyInput.value = n.agency || "";
   els.methodInput.value = n.method || "추첨";
   els.baseInput.value = n.baseAmount != null ? String(Math.round(n.baseAmount)) : "";
-  if (els.estimateInput) {
-    const est = n.estimateAmount ?? n.presmptPrce ?? null;
-    els.estimateInput.value = est != null && est > 0 ? String(Math.round(est)) : "";
-  }
-  state.baseMeta = {
-    baseSource: n.baseSource || (n.baseIsProxy ? "proxy" : n.baseAmount ? "bssamt" : null),
-    baseIsProxy: Boolean(n.baseIsProxy),
-    estimateAmount: n.estimateAmount ?? n.presmptPrce ?? null,
-    budgetAmount: n.budgetAmount ?? null,
-    proxyAmount: n.baseIsProxy && n.baseAmount != null ? n.baseAmount : null,
-  };
   const planned =
     n.plannedAmount ?? n.planned ?? n.yega ?? (n.awardAmount && n.awardRate ? n.awardAmount / n.awardRate : null);
   if (els.plannedInput) {
@@ -575,15 +425,9 @@ function applyNotice(n) {
   if (n.refNo) els.lookupInput.value = n.refNo;
   els.lookupResults.hidden = true;
   els.lookupResults.innerHTML = "";
-  if (n.baseIsProxy) {
-    els.lookupMsg.textContent = `주의 · ${baseSourceLabel(n.baseSource, true)} ${won(
-      n.baseAmount,
-    )} — 원문 기초금액으로 고치세요 (${n.source || "조회"})`;
-  } else if (n.baseAmount != null) {
-    els.lookupMsg.textContent = `채움 완료 · 기초금액 ${won(n.baseAmount)} (${n.source || "조회"})`;
-  } else {
-    els.lookupMsg.textContent = "공고는 찾았지만 기초금액(bssamt)이 없어 직접 확인해 주세요.";
-  }
+  els.lookupMsg.textContent = n.baseAmount != null
+    ? `채움 완료 · 기초금액 ${won(n.baseAmount)} (${n.source || "조회"})`
+    : "공고는 찾았지만 기초금액이 없어 직접 확인해 주세요.";
   state.autoInfer = true;
   refresh();
 }
@@ -804,12 +648,9 @@ function bind() {
   });
 
   els.finalBid.addEventListener("input", () => {
-    state.lockFinal = true;
-    els.decisionSource.value = "custom";
     if (state.calc) renderCritique(readNotice(), state.calc);
   });
   els.finalBid.addEventListener("change", () => {
-    state.lockFinal = true;
     if (state.calc) renderCritique(readNotice(), state.calc);
   });
 

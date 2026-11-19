@@ -63,16 +63,12 @@
               <input id="methodInput" type="text" placeholder="예: 추첨" value="추첨" />
             </label>
             <label class="field">
-              <span>기초금액 (원) · 인포21C 축</span>
-              <input id="baseInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="bssamt · 추정·예산 금지" />
-            </label>
-            <label class="field">
-              <span>추정가격 (참고, 기초 아님)</span>
-              <input id="estimateInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="presmptPrce · 산정에 안 씀" />
+              <span>기초금액 (원)</span>
+              <input id="baseInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="bssamt" />
             </label>
             <label class="field">
               <span>예정가격 (원)</span>
-              <input id="plannedInput" type="number" min="0" step="1" inputmode="numeric" placeholder="개찰 후 예정가 · 예가=예정÷기초" />
+              <input id="plannedInput" type="number" min="0" step="1" inputmode="numeric" placeholder="개찰 후 예정가 · 없으면 기초×예가" />
             </label>
             <label class="field">
               <span>낙찰하한율 (%)</span>
@@ -176,20 +172,10 @@
             </label>
           </div>
           <div class="formula-note hint">
-            인포21C 축은 <strong>기초금액</strong>입니다. 투찰가 ≈ 기초 × 예가사정율(예정÷기초) × 투찰률(또는 하한).
-            추정가격·배정예산을 기초 칸에 넣으면 인포와 금액이 어긋납니다.
+            인포21C 정리 항목 반영: <strong>예가사정율</strong>(예정÷기초) · <strong>A값</strong> · <strong>순공사원가</strong> ·
+            <strong>투찰률</strong>(낙찰÷예정, 나라장터 표시). D안은 하한밀착 산식입니다.
           </div>
           <div class="notice-grid notice-live" id="noticeDetail"></div>
-        </section>
-
-        <section class="panel verdict verdict-hero" aria-labelledby="verdictTitle">
-          <div class="panel-head">
-            <h2 id="verdictTitle">AI 선정 투찰가 (이 금액 1개)</h2>
-            <p class="hint">아래 숫자만 보면 됩니다. 근거·보조안은 그 아래에 있습니다.</p>
-          </div>
-          <div id="verdictBox" class="verdict-box" role="status" aria-live="polite">
-            <p class="verdict-bid muted">공고를 넣으면 여기에 금액 1개가 나옵니다</p>
-          </div>
         </section>
 
         <section class="panel history" aria-labelledby="historyTitle">
@@ -222,8 +208,8 @@
 
         <section class="panel plans" aria-labelledby="plansTitle">
           <div class="panel-head">
-            <h2 id="plansTitle">보조 안 (대조용)</h2>
-            <p class="hint">AI 판정이 메인입니다. 대조만 하세요.</p>
+            <h2 id="plansTitle">산정 기준 (비슷한 공고)</h2>
+            <p class="hint">동일종류·1년고확률·동일공고·하한밀착. 하나를 고르세요.</p>
           </div>
           <div class="plan-grid" id="planGrid" role="radiogroup" aria-label="산정안 선택"></div>
         </section>
@@ -245,11 +231,11 @@
             <label class="field">
               <span>선택</span>
               <select id="decisionSource" aria-label="최종 선택 출처">
-                <option value="A">A · 동일종류</option>
-                <option value="B">B · 1년 최빈</option>
-                <option value="C">C · 동일·재공고</option>
-                <option value="D">D · 하한밀착</option>
-                <option value="custom">직접 입력(취합가 수정)</option>
+                <option value="A">A · 동일종류 투찰률</option>
+                <option value="B">B · 1년 투찰률 고확률</option>
+                <option value="C">C · 동일·유사 공고</option>
+                <option value="D">D · 하한밀착(예가×하한·A값)</option>
+                <option value="custom">직접 입력</option>
               </select>
             </label>
             <label class="field grow">
