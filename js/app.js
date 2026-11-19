@@ -1,4 +1,10 @@
-import { calcPlans, inferKind, inferNoticeKey, inferRegion } from "./calc.js";
+import {
+  calcPlans,
+  inferKind,
+  inferNoticeKey,
+  inferRegion,
+  resolveNoticeKind,
+} from "./calc.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -18,6 +24,7 @@ const els = {
   agencyInput: document.getElementById("agencyInput"),
   methodInput: document.getElementById("methodInput"),
   baseInput: document.getElementById("baseInput"),
+  plannedInput: document.getElementById("plannedInput"),
   floorRateInput: document.getElementById("floorRateInput"),
   regionInput: document.getElementById("regionInput"),
   kindInput: document.getElementById("kindInput"),
@@ -60,10 +67,13 @@ function readNotice() {
   const agency = (els.agencyInput.value || "").trim();
   const method = (els.methodInput.value || "").trim() || "추첨";
   const baseAmount = Number(els.baseInput.value) || 0;
+  const plannedRaw = Number(els.plannedInput?.value);
+  const plannedAmount = Number.isFinite(plannedRaw) && plannedRaw > 0 ? plannedRaw : null;
   const floorPct = Number(els.floorRateInput.value);
   const floorRate = Number.isFinite(floorPct) && floorPct > 0 ? floorPct / 100 : 0;
   const region = els.regionInput.value || inferRegion(agency);
-  const kind = els.kindInput.value || inferKind(title);
+  // 공고명 단서 > 선택값 (청소인데 석면이 남는 일 차단)
+  const kind = resolveNoticeKind(title, els.kindInput.value);
   const noticeKey =
     (els.noticeKeyInput.value || "").trim() || inferNoticeKey(title, agency) || null;
 
@@ -73,6 +83,7 @@ function readNotice() {
     agency: agency || "-",
     method,
     baseAmount,
+    plannedAmount,
     floorRate,
     region,
     kind,
@@ -89,11 +100,17 @@ function readInputs() {
 
 function renderNoticeLive(notice) {
   const floorAmt = notice.baseAmount * notice.floorRate;
+  const ref = notice.plannedAmount || notice.baseAmount;
   els.noticeDetail.innerHTML = `
     <div class="metric"><span class="label">적용 지역</span><span class="value">${notice.region}</span></div>
     <div class="metric"><span class="label">적용 종류</span><span class="value">${notice.kind}</span></div>
     <div class="metric"><span class="label">하한 금액</span><span class="value">${
       notice.baseAmount && notice.floorRate ? won(floorAmt) : "-"
+    }</span></div>
+    <div class="metric"><span class="label">산정 기준액</span><span class="value">${
+      ref
+        ? `${won(ref)}${notice.plannedAmount ? " (예정가)" : " (기초·예정가 미입력)"}`
+        : "-"
     }</span></div>
     <div class="metric"><span class="label">동일공고 키</span><span class="value">${
       notice.noticeKey || "공고명 유사 매칭"
@@ -104,7 +121,7 @@ function renderNoticeLive(notice) {
 function rowsForTab(calc, notice) {
   if (state.historyTab === "year") {
     return {
-      summary: `${notice.region} 석면 용역 · 최근 1년 ${calc.year.yearCases.length}건 (최빈 구간 강조)`,
+      summary: `${notice.region} · ${notice.kind} · 최근 1년 ${calc.year.yearCases.length}건 (최빈 구간 강조)`,
       rows: calc.year.yearCases
         .slice()
         .sort((a, b) => new Date(b.awardedAt) - new Date(a.awardedAt))
@@ -138,7 +155,7 @@ function renderHistory(calc, notice) {
     <div class="metric"><span class="label">1안 표본</span><span class="value">${calc.stats.kindN}건 · ${
       calc.stats.kindScope || "-"
     }</span></div>
-    <div class="metric"><span class="label">1안 중앙 사정률</span><span class="value">${
+    <div class="metric"><span class="label">1안 중앙 사정률(÷예정가)</span><span class="value">${
       calc.stats.kindP50 == null ? "-" : pct(calc.stats.kindP50)
     }</span></div>
     <div class="metric"><span class="label">2안 1년 표본</span><span class="value">${calc.stats.yearN}건 · ${
@@ -224,6 +241,7 @@ function saveDraft() {
     agency: els.agencyInput.value,
     method: els.methodInput.value,
     base: els.baseInput.value,
+    planned: els.plannedInput?.value || "",
     floorRate: els.floorRateInput.value,
     region: els.regionInput.value,
     kind: els.kindInput.value,
@@ -244,6 +262,7 @@ function loadDraft() {
     els.agencyInput.value = d.agency ?? "";
     els.methodInput.value = d.method ?? "추첨";
     els.baseInput.value = d.base ?? "";
+    if (els.plannedInput) els.plannedInput.value = d.planned ?? "";
     els.floorRateInput.value = d.floorRate ?? "";
     if (d.region) els.regionInput.value = d.region;
     if (d.kind) els.kindInput.value = d.kind;
@@ -260,8 +279,8 @@ function applyInference() {
   if (!state.autoInfer) return;
   const title = els.titleInput.value || "";
   const agency = els.agencyInput.value || "";
-  const kind = inferKind(title);
-  if (kind !== "기타") els.kindInput.value = kind;
+  const kind = resolveNoticeKind(title, els.kindInput.value);
+  els.kindInput.value = kind;
   const region = inferRegion(agency);
   if (region !== "기타") els.regionInput.value = region;
   const key = inferNoticeKey(title, agency);
@@ -319,6 +338,11 @@ function applyNotice(n) {
   els.agencyInput.value = n.agency || "";
   els.methodInput.value = n.method || "추첨";
   els.baseInput.value = n.baseAmount != null ? String(Math.round(n.baseAmount)) : "";
+  const planned =
+    n.plannedAmount ?? n.planned ?? n.yega ?? (n.awardAmount && n.awardRate ? n.awardAmount / n.awardRate : null);
+  if (els.plannedInput) {
+    els.plannedInput.value = planned != null && planned > 0 ? String(Math.round(planned)) : "";
+  }
   els.floorRateInput.value =
     n.floorRate != null ? String(Number((n.floorRate * 100).toFixed(2))) : "87.85";
   if (n.region) els.regionInput.value = n.region;
@@ -353,9 +377,12 @@ function lookupFromCatalog(q) {
     agency: r.agency,
     method: r.method || "추첨",
     baseAmount: r.baseAmount,
+    plannedAmount: r.plannedAmount ?? r.planned ?? null,
+    awardAmount: r.awardAmount ?? null,
+    awardRate: r.awardRate ?? null,
     floorRate: r.floorRate ?? 0.8785,
     region: r.region || "경기",
-    kind: r.kind || "석면농도·비산측정",
+    kind: r.kind || inferKind(r.title || ""),
     noticeKey: r.noticeKey || r.refNo,
     refNo: r.refNo,
     bidNtceNo: r.bidNtceNo || null,
@@ -463,6 +490,7 @@ function setExample() {
   els.agencyInput.value = "";
   els.methodInput.value = "추첨";
   els.baseInput.value = "";
+  if (els.plannedInput) els.plannedInput.value = "";
   els.floorRateInput.value = "87.85";
   els.regionInput.value = "경기";
   els.kindInput.value = "석면농도·비산측정";
@@ -496,6 +524,7 @@ function bind() {
     "agencyInput",
     "methodInput",
     "baseInput",
+    "plannedInput",
     "floorRateInput",
     "regionInput",
     "kindInput",

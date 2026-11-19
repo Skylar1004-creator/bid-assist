@@ -42,11 +42,12 @@
     "kind": "석면농도·비산측정",
     "refNo": "R26BK01578429",
     "noticeKey": "gimhae-donggwang-asbestos",
-    "presmptPrce": 12440000,
+    "plannedAmount": 13909925,
+    "presmptPrce": 13684000,
     "awardAmount": 13150324,
-    "awardRate": 0.94539,
+    "awardRate": 0.9453914381278116,
     "awardedAt": "2026-06-22",
-    "note": "개찰완료 · 낙찰 미래환경기술원 · 예정가 13,909,925"
+    "note": "개찰완료 · 낙찰 미래환경기술원 · 사정률=낙찰÷예정가(13,909,925)=94.539%"
   },
   {
     "title": "팔달중학교 본관동 석면농도 및 비산정도 측정용역 수의계약 안내공고",

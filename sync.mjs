@@ -120,15 +120,19 @@ function mapAward(row) {
     num(row.totPrdprcNum) ||
     null;
   const awardAmt = num(row.sucsfbidAmt) || num(row.bidwinnrAmt);
+  // 나라장터 sucsfbidRate = 낙찰가÷예정가격 (기초 대비 아님)
   const rateRaw = num(row.sucsfbidRate) || num(row.bidprcrt);
   const rate =
     rateRaw != null
       ? rateRaw > 2
         ? rateRaw / 100
         : rateRaw
-      : base && awardAmt
-        ? awardAmt / base
-        : null;
+      : null;
+  const planned =
+    num(row.plnprc) ||
+    num(row.yegafullamt) ||
+    num(row.rlOpengPlnprc) ||
+    (rate && awardAmt ? Math.round(awardAmt / rate) : null);
 
   return {
     id: `${row.bidNtceNo || "x"}-${row.bidNtceOrd || "0"}-${row.bidClsfcNo || "0"}`,
@@ -136,8 +140,10 @@ function mapAward(row) {
     title,
     agency,
     base,
+    planned,
     award: awardAmt,
-    rate,
+    rate: rate != null ? rate : planned && awardAmt ? awardAmt / planned : null,
+    rateBasis: rate != null || planned ? "예정가" : null,
     kind: inferKind(title),
     region: inferRegion(agency, row.prtcptLmtRgnNm || ""),
     awardedAt: toDateStr(row.opengDate || row.fnlSucsfDate || row.rgstDt),

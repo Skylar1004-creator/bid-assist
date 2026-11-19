@@ -1,4 +1,32 @@
-/** 산정 기준 3안 — 지역 표본이 부족하면 전국·유사종류로 넓힘 */
+/** 산정 기준 3안 — 지역 표본이 부족하면 전국·유사종류로 넓힘
+ * 사정률(투찰률) = 낙찰가 ÷ 예정가격 (나라장터 표시와 동일, 기초금액 대비 아님)
+ */
+
+/** 나라장터 사정률 재현: 낙찰 ÷ 예정가 */
+export function officialBidRate(award, planned) {
+  if (award == null || planned == null || !(planned > 0)) return null;
+  return award / planned;
+}
+
+/** 투찰·구간 기준 금액: 예정가 우선, 없으면 기초 */
+export function bidReferenceAmount(notice) {
+  if (notice.plannedAmount != null && notice.plannedAmount > 0) return notice.plannedAmount;
+  if (notice.planned != null && notice.planned > 0) return notice.planned;
+  return notice.baseAmount > 0 ? notice.baseAmount : 0;
+}
+
+/** 이력 행 사정률을 예정가 대비로 맞춤 */
+export function normalizeHistoryRate(c) {
+  if (c.failed) return c;
+  if (c.award != null && c.planned != null && c.planned > 0) {
+    return {
+      ...c,
+      rate: officialBidRate(c.award, c.planned),
+      rateBasis: c.rateBasis === "추정예정가" ? "추정예정가" : "예정가",
+    };
+  }
+  return c;
+}
 
 export function quantile(sorted, q) {
   if (!sorted.length) return null;
@@ -38,49 +66,111 @@ function withSimilarity(notice, cases, asOf) {
 }
 
 function awarded(history) {
-  return history.filter((c) => c.award != null && c.rate != null && c.base > 0);
+  return history
+    .map(normalizeHistoryRate)
+    .filter((c) => c.award != null && c.rate != null && c.base > 0);
 }
 
-/** 1안 후보: 지역·종류 → 전국 종류 → 전국 석면 */
+export const KIND_OPTIONS = [
+  "청소",
+  "석면농도·비산측정",
+  "석면해체전측정",
+  "안전진단",
+  "기타",
+];
+
+/** 종류 계열 — 청소↔석면↔안전진단↔기타 교차 금지 */
+export function kindFamily(kind = "") {
+  const k = String(kind || "");
+  if (k.includes("석면")) return "asbestos";
+  if (k === "청소" || k.includes("청소") || k.includes("미화")) return "cleaning";
+  if (k === "안전진단" || k.includes("안전진단") || k.includes("정밀안전")) return "safety";
+  if (k === "기타" || !k) return "other";
+  return `solo:${k}`;
+}
+
+export function sameKindFamily(a, b) {
+  const fa = kindFamily(a);
+  const fb = kindFamily(b);
+  if (fa === "other" || fb === "other") return String(a) === String(b);
+  return fa === fb;
+}
+
+/**
+ * 이력 건이 이번 공고 종류에 속하는지 — 저장된 kind만 신뢰(제목 추정으로 편입 금지).
+ * 석면만 농도↔해체 계열 허용. 청소·안전진단·기타는 종류 문자열 완전 일치만.
+ */
+export function matchesNoticeKind(c, noticeKind) {
+  const want = noticeKind || "기타";
+  const got = c?.kind || "기타";
+  const family = kindFamily(want);
+  if (family === "other") return got === "기타";
+  if (family === "asbestos") return kindFamily(got) === "asbestos";
+  return got === want;
+}
+
+/** 표본 누수 차단: 다른 계열이 한 건이라도 있으면 전부 제외 */
+export function guardKindCases(cases, noticeKind) {
+  return (cases || []).filter((c) => matchesNoticeKind(c, noticeKind));
+}
+
+/**
+ * 공고명 단서가 있으면 선택값보다 공고명 우선(청소 공고 + 석면 선택 방지).
+ */
+export function resolveNoticeKind(title = "", selected = "") {
+  const fromTitle = inferKind(title);
+  if (fromTitle !== "기타") return fromTitle;
+  if (selected && KIND_OPTIONS.includes(selected)) return selected;
+  return selected || "기타";
+}
+
+function pickScoped(steps, notice, asOf) {
+  const kind = notice.kind || "기타";
+  for (const step of steps) {
+    const cases = guardKindCases(step.cases, kind);
+    if (cases.length >= 3) {
+      return { scope: step.label, cases: withSimilarity(notice, cases, asOf) };
+    }
+  }
+  for (const step of steps) {
+    const cases = guardKindCases(step.cases, kind);
+    if (cases.length >= 1) {
+      return {
+        scope: `${step.label}(표본적음)`,
+        cases: withSimilarity(notice, cases, asOf),
+      };
+    }
+  }
+  return { scope: `${kind} 표본 없음`, cases: [] };
+}
+
+/** 1안: 지역·동일종류 → 전국·동일종류 → (석면만) 전국 석면계열 */
 export function sameKindCases(notice, history, asOf = new Date()) {
   const pool = awarded(history);
   const region = notice.region || "경기";
-  const kind = notice.kind;
+  const kind = notice.kind || "기타";
+  const family = kindFamily(kind);
 
   const steps = [
     {
-      label: `${region}·동일종류`,
+      label: `${region}·${kind}`,
       cases: pool.filter((c) => c.region === region && c.kind === kind),
     },
     {
-      label: `전국·동일종류`,
+      label: `전국·${kind}`,
       cases: pool.filter((c) => c.kind === kind),
-    },
-    {
-      label: `전국·석면용역`,
-      cases: pool.filter((c) => String(c.kind || "").includes("석면") || String(c.title || "").includes("석면")),
     },
   ];
 
-  for (const step of steps) {
-    if (step.cases.length >= 3) {
-      return {
-        scope: step.label,
-        cases: withSimilarity(notice, step.cases, asOf),
-      };
-    }
+  // 석면만 세부종류 사이를 넓힘. 그 외 계열은 절대 교차하지 않음.
+  if (family === "asbestos") {
+    steps.push({
+      label: "전국·석면계열",
+      cases: pool.filter((c) => kindFamily(c.kind) === "asbestos"),
+    });
   }
 
-  // 최소 1건이라도 있으면 씀
-  for (const step of steps) {
-    if (step.cases.length >= 1) {
-      return {
-        scope: `${step.label}(표본적음)`,
-        cases: withSimilarity(notice, step.cases, asOf),
-      };
-    }
-  }
-  return { scope: "없음", cases: [] };
+  return pickScoped(steps, notice, asOf);
 }
 
 function rateBand(cases) {
@@ -113,50 +203,61 @@ function rateBand(cases) {
   };
 }
 
-/** 2안: 지역 1년 → 전국 1년 석면 */
+/** 2안: 같은 종류만 · 지역 1년 → 전국 1년 (다른 계열 혼입 금지) */
 export function yearHighProbBand(notice, history, asOf = new Date()) {
   const region = notice.region || "경기";
+  const kind = notice.kind || "기타";
   const pool = awarded(history).filter(
-    (c) =>
-      (String(c.kind || "").includes("석면") || String(c.title || "").includes("석면")) &&
-      c.awardedAt &&
-      withinLastYear(asOf, c.awardedAt),
+    (c) => matchesNoticeKind(c, kind) && c.awardedAt && withinLastYear(asOf, c.awardedAt),
   );
 
   const steps = [
-    { label: `${region} 1년`, cases: pool.filter((c) => c.region === region) },
-    { label: "전국 1년", cases: pool },
+    {
+      label: `${region}·${kind} 1년`,
+      cases: pool.filter((c) => c.region === region && c.kind === kind),
+    },
+    {
+      label: `${region}·동계열 1년`,
+      cases: pool.filter((c) => c.region === region),
+    },
+    {
+      label: `전국·${kind} 1년`,
+      cases: pool.filter((c) => c.kind === kind),
+    },
+    { label: `전국·동계열 1년`, cases: pool },
   ];
 
   for (const step of steps) {
-    if (step.cases.length >= 3) {
-      const band = rateBand(step.cases);
+    const cases = guardKindCases(step.cases, kind);
+    if (cases.length >= 3) {
+      const band = rateBand(cases);
       if (band.band) {
-        return { scope: step.label, yearCases: step.cases, ...band };
+        return { scope: step.label, yearCases: cases, ...band };
       }
     }
   }
 
   for (const step of steps) {
-    if (step.cases.length >= 1) {
-      const rates = step.cases.map((c) => c.rate).sort((a, b) => a - b);
+    const cases = guardKindCases(step.cases, kind);
+    if (cases.length >= 1) {
+      const rates = cases.map((c) => c.rate).sort((a, b) => a - b);
       const p50 = quantile(rates, 0.5);
       const p25 = quantile(rates, 0.25) ?? p50;
       const p75 = quantile(rates, 0.75) ?? p50;
       return {
         scope: `${step.label}(중앙값)`,
-        yearCases: step.cases,
+        yearCases: cases,
         band: [p25, p75],
         midRate: p50,
-        count: step.cases.length,
+        count: cases.length,
         share: 1,
-        bucketCases: step.cases,
+        bucketCases: cases,
       };
     }
   }
 
   return {
-    scope: "없음",
+    scope: `${kind} 1년 표본 없음`,
     yearCases: [],
     band: null,
     midRate: null,
@@ -200,83 +301,94 @@ function coreTokens(title = "") {
   return tokens;
 }
 
-/** 3안: 동일공고 → 없으면 유사 학교·측정 낙찰 */
+/** 3안: 동일공고(같은 종류만) → 없으면 유사·같은 종류 */
 export function sameNoticeHistory(notice, history) {
-  const exact = history
+  const kind = notice.kind || "기타";
+  const all = history.map(normalizeHistoryRate);
+  const exact = all
     .filter((c) => {
+      if (!matchesNoticeKind(c, kind)) return false;
       if (notice.noticeKey && c.noticeKey && notice.noticeKey === c.noticeKey) return true;
       if (notice.refNo && c.refNo && notice.refNo === c.refNo) return true;
-      return titlesLikelySame(notice.title, c.title);
+      return false;
     })
     .sort((a, b) => new Date(b.awardedAt || 0) - new Date(a.awardedAt || 0));
 
-  if (exact.length) return { scope: "동일·재공고", cases: exact };
+  if (exact.length) return { scope: "동일·재공고", cases: guardKindCases(exact, kind) };
 
   const tokens = coreTokens(notice.title);
   const similar = awarded(history)
     .filter((c) => {
-      if (notice.kind && c.kind && c.kind !== notice.kind) return false;
+      if (!matchesNoticeKind(c, kind)) return false;
       const title = c.title || "";
-      if (!String(c.kind || title).includes("석면")) return false;
+      if (titlesLikelySame(notice.title, title)) return true;
       if (tokens.length && tokens.some((tok) => title.includes(tok))) return true;
-      // 금액대 ±40% 유사 측정
       if (notice.baseAmount > 0 && c.base > 0) {
         const diff = Math.abs(c.base - notice.baseAmount) / notice.baseAmount;
-        return diff <= 0.4 && title.includes("측정");
+        return diff <= 0.4;
       }
       return false;
     })
     .sort((a, b) => new Date(b.awardedAt || 0) - new Date(a.awardedAt || 0));
 
-  return { scope: similar.length ? "유사측정 낙찰" : "없음", cases: similar };
+  const guarded = guardKindCases(similar, kind);
+  return { scope: guarded.length ? `유사·${kind} 낙찰` : "없음", cases: guarded };
 }
 
 export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = new Date() } = {}) {
+  const resolvedKind = resolveNoticeKind(notice.title, notice.kind);
+  notice = { ...notice, kind: resolvedKind };
+
   const floor = notice.baseAmount > 0 && notice.floorRate > 0 ? notice.baseAmount * notice.floorRate : 0;
   const minOk = cost * (1 + minMarginPct / 100);
-  const region = notice.region || "경기";
+  const ref = bidReferenceAmount(notice);
+  const usedPlanned = Boolean(
+    (notice.plannedAmount != null && notice.plannedAmount > 0) ||
+      (notice.planned != null && notice.planned > 0)
+  );
 
   const kindPack = sameKindCases(notice, history, asOf);
-  const kindCases = kindPack.cases;
+  const kindCases = guardKindCases(kindPack.cases, resolvedKind);
   const kindRates = kindCases.map((c) => c.rate).sort((a, b) => a - b);
   const kindP25 = quantile(kindRates, 0.25);
   const kindP50 = quantile(kindRates, 0.5);
   const kindP75 = quantile(kindRates, 0.75);
-  const kindOk = kindCases.length >= 1 && kindP50 != null;
-  const bidA = kindOk ? notice.baseAmount * kindP50 : null;
+  const kindOk = kindCases.length >= 1 && kindP50 != null && ref > 0;
+  const bidA = kindOk ? ref * kindP50 : null;
   const rangeA =
     kindOk && kindP25 != null && kindP75 != null
-      ? [notice.baseAmount * kindP25, notice.baseAmount * kindP75]
+      ? [ref * kindP25, ref * kindP75]
       : kindOk
         ? [bidA * 0.99, bidA * 1.01]
         : null;
 
-  const year = yearHighProbBand(notice, history, asOf);
-  const bandOk = year.midRate != null && year.band != null;
-  const bidB = bandOk ? notice.baseAmount * year.midRate : null;
-  const rangeB = bandOk
-    ? [notice.baseAmount * year.band[0], notice.baseAmount * year.band[1]]
-    : null;
+  const yearRaw = yearHighProbBand(notice, history, asOf);
+  const yearCases = guardKindCases(yearRaw.yearCases, resolvedKind);
+  const year = { ...yearRaw, yearCases };
+  const bandOk = year.midRate != null && year.band != null && ref > 0 && yearCases.length >= 1;
+  const bidB = bandOk ? ref * year.midRate : null;
+  const rangeB = bandOk ? [ref * year.band[0], ref * year.band[1]] : null;
 
   const samePack = sameNoticeHistory(notice, history);
-  const sameAll = samePack.cases;
+  const sameAll = guardKindCases(samePack.cases, resolvedKind);
   const same = sameAll.filter((c) => c.award != null && c.rate != null);
   const sameRates = same.map((c) => c.rate).sort((a, b) => a - b);
   const sameP50 = quantile(sameRates, 0.5);
-  const sameOk = same.length >= 1 && sameP50 != null;
+  const sameOk = same.length >= 1 && sameP50 != null && ref > 0;
   const latest = same[0];
   const bidC = sameOk
     ? same.length === 1
-      ? notice.baseAmount * latest.rate
-      : notice.baseAmount * sameP50
+      ? ref * latest.rate
+      : ref * sameP50
     : null;
   const rangeC = sameOk
     ? same.length === 1
       ? [bidC * 0.995, bidC * 1.005]
-      : [notice.baseAmount * sameRates[0], notice.baseAmount * sameRates[sameRates.length - 1]]
+      : [ref * sameRates[0], ref * sameRates[sameRates.length - 1]]
     : null;
 
   const pct = (n) => `${(n * 100).toFixed(2)}%`;
+  const rateNote = usedPlanned ? "예정가×사정률" : "기초×사정률(예정가 미입력)";
 
   const flag = (bid) => {
     if (bid == null) return { kind: "warn", text: "표본 부족 · 참고 불가" };
@@ -288,6 +400,8 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
   return {
     floor,
     minOk,
+    refAmount: ref,
+    usedPlanned,
     kindCases,
     year: { ...year, yearCases: year.yearCases || [] },
     sameAll,
@@ -307,7 +421,7 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         id: "A",
         name: "동일종류 낙찰",
         why: kindOk
-          ? `${kindPack.scope} ${kindCases.length}건 · 사정률 중앙값 ${pct(kindP50)}`
+          ? `${kindPack.scope} ${kindCases.length}건 · 사정률(예정가 대비) 중앙값 ${pct(kindP50)} · ${rateNote}`
           : "동일·유사 종류 낙찰 표본이 없습니다.",
         bid: bidA,
         range: rangeA,
@@ -318,8 +432,8 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         id: "B",
         name: "1년 고확률 구간",
         why: bandOk
-          ? `${year.scope} ${year.yearCases.length}건 · 구간 ${pct(year.band[0])}~${pct(year.band[1])}`
-          : "최근 1년 석면 용역 표본이 없습니다.",
+          ? `${year.scope} ${year.yearCases.length}건 · 구간 ${pct(year.band[0])}~${pct(year.band[1])} · ${rateNote}`
+          : `최근 1년 ${notice.kind || "해당 종류"} 표본이 없습니다.`,
         bid: bidB,
         range: rangeB,
         flag: flag(bidB),
@@ -331,9 +445,9 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         why: sameOk
           ? samePack.scope === "동일·재공고"
             ? same.length === 1
-              ? `동일 공고 직전 낙찰 사정률 ${pct(latest.rate)} (${latest.awardedAt || "-"})`
-              : `동일·재공고 낙찰 ${same.length}건 중앙값 ${pct(sameP50)}`
-            : `유사 측정 낙찰 ${same.length}건 사정률 중앙값 ${pct(sameP50)}`
+              ? `동일 공고 직전 낙찰 사정률(예정가 대비) ${pct(latest.rate)} (${latest.awardedAt || "-"}) · ${rateNote}`
+              : `동일·재공고 낙찰 ${same.length}건 중앙값 ${pct(sameP50)} · ${rateNote}`
+            : `유사 측정 낙찰 ${same.length}건 사정률 중앙값 ${pct(sameP50)} · ${rateNote}`
           : "동일·유사 공고 낙찰 이력이 없습니다.",
         bid: bidC,
         range: rangeC,
@@ -345,8 +459,12 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
 }
 
 export function inferKind(title = "") {
-  if (title.includes("해체")) return "석면해체전측정";
-  if (title.includes("석면")) return "석면농도·비산측정";
+  const t = String(title || "");
+  if (/청소|미화|위생관리|청사\s*관리|건물관리/.test(t) && !t.includes("석면")) return "청소";
+  if (/안전진단|정밀안전|내진성능|시설물\s*안전/.test(t)) return "안전진단";
+  if (t.includes("석면") && t.includes("해체")) return "석면해체전측정";
+  if (t.includes("해체") && /석면|해체전/.test(t)) return "석면해체전측정";
+  if (t.includes("석면")) return "석면농도·비산측정";
   return "기타";
 }
 
