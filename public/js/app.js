@@ -5,6 +5,7 @@ import {
   inferRegion,
   resolveNoticeKind,
 } from "./calc.js";
+import { bizNoMatch, looksLikeBizNo, normalizeBizNo } from "./biz-no.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -320,17 +321,6 @@ function refresh() {
   els.syncLabel.textContent = `${src} ${n}건${synced}`;
 }
 
-function normalizeBizNo(raw) {
-  return String(raw || "")
-    .trim()
-    .replace(/\s+/g, "")
-    .toUpperCase();
-}
-
-function looksLikeBizNo(raw) {
-  const q = normalizeBizNo(raw);
-  return /^R\d{2}[A-Z0-9]{6,}$/i.test(q) || /^[A-Z]\d{2}[A-Z]{1,3}\d{5,}$/i.test(q);
-}
 
 function applyNotice(n) {
   state.autoInfer = false;
@@ -369,8 +359,8 @@ function applyNotice(n) {
 function lookupFromCatalog(q) {
   const needle = normalizeBizNo(q);
   const hits = (state.catalog || []).filter((r) => {
-    const ref = normalizeBizNo(r.refNo || r.bidNtceNo || "");
-    return ref && (ref === needle || ref.includes(needle) || needle.includes(ref));
+    const keys = [r.refNo, r.bidNtceNo, r.noticeKey].filter(Boolean);
+    return keys.some((k) => bizNoMatch(k, needle));
   });
   return hits.map((r) => ({
     title: r.title,
@@ -417,7 +407,8 @@ async function runLookup() {
   const raw = els.lookupInput.value || "";
   const q = normalizeBizNo(raw);
   if (!q) {
-    els.lookupMsg.textContent = "사업번호를 입력해 주세요. 예: R26BK01839679";
+    els.lookupMsg.textContent =
+      "사업번호·공고번호를 입력해 주세요. 예: 2026LNF007647040-01 또는 뒷자리 47040";
     return;
   }
   els.lookupInput.value = q;

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferKind, inferNoticeKey, inferRegion } from "./calc.js";
+import { looksLikeBizNo, normalizeBizNo, splitBizNo } from "./biz-no.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -29,13 +30,6 @@ function pick(text, patterns) {
     if (m?.[1]) return m[1].trim();
   }
   return null;
-}
-
-function normalizeBizNo(raw) {
-  return String(raw || "")
-    .trim()
-    .replace(/\s+/g, "")
-    .toUpperCase();
 }
 
 async function fetchText(url) {
@@ -158,6 +152,49 @@ async function fetchFromCraftspace(refNo) {
   };
 }
 
+/** 국방·공공일감 등 2026LNF… 공고 */
+async function fetchFromGonggongIlgam(refNo) {
+  const { core } = splitBizNo(refNo);
+  const url = `https://work.00data.kr/projects/${core}-N`;
+  const html = await fetchText(url);
+  const text = stripHtml(html);
+  if (/페이지를 찾을 수|Not Found/i.test(text) && !/추정가격|배정예산|공고번호/.test(text)) {
+    throw new Error("gonggongilgam 404");
+  }
+  const title =
+    pick(html, [/<h1[^>]*>([^<]+)<\/h1>/i]) ||
+    pick(text, [/건\s*명\s*[:：]?\s*([^\n]{4,80})/, /([가-힣0-9년\s]+정밀안전[^\n]{0,20}용역)/]);
+  const agencyRaw =
+    pick(html, [
+      /수요기관<\/[^>]+>\s*<[^>]+>([^<]{2,40})</i,
+      /공고기관<\/[^>]+>\s*<[^>]+>([^<]{2,40})</i,
+    ]) ||
+    pick(text, [/수요기관\s+([가-힣A-Za-z0-9]+)/, /공고기관\s+([가-힣A-Za-z0-9]+)/]) ||
+    "제1보병사단";
+  const agency = String(agencyRaw).replace(/\s+/g, " ").trim().slice(0, 40);
+  const base =
+    wonToNumber(pick(text, [/추정가격\s*([\d,]+)\s*원/, /추정가격\s*([\d.]+)\s*만/])) ||
+    num(pick(text, [/추정가격\s*([\d,]+)/]));
+  const budget = wonToNumber(pick(text, [/배정예산\s*([\d,]+)\s*원/, /예산액[^\d]*([\d,]+)\s*원/]));
+  const floorRaw = pick(text, [/낙찰하한율\s*\(?\s*([\d.]+)\s*%/, /하한율\s*\(?\s*([\d.]+)\s*%/]);
+  const refAlt = pick(text, [/참조번호\s*([A-Z0-9]+)/i]);
+  if (!title && !base && !budget) throw new Error("gonggongilgam parse fail");
+  const cleanTitle = (title || `공고 ${core}`).replace(/\s+/g, " ").trim().slice(0, 120);
+  return {
+    title: cleanTitle,
+    agency,
+    method: "최저가",
+    baseAmount: base || budget,
+    floorRate: floorRaw != null ? Number(floorRaw) / 100 : 0.88,
+    region: /파주|경기/.test(text) ? "경기" : inferRegion(agency),
+    kind: inferKind(cleanTitle),
+    noticeKey: core,
+    refNo: refAlt || core,
+    bidNtceNo: core,
+    source: "gonggongilgam",
+  };
+}
+
 async function writeCache(notice) {
   try {
     await fs.mkdir(CACHE_DIR, { recursive: true });
@@ -176,7 +213,11 @@ async function appendCatalog(notice) {
     } catch {
       list = [];
     }
-    const idx = list.findIndex((x) => normalizeBizNo(x.refNo) === normalizeBizNo(notice.refNo));
+    const idx = list.findIndex(
+      (x) =>
+        (notice.bidNtceNo && normalizeBizNo(x.bidNtceNo) === normalizeBizNo(notice.bidNtceNo)) ||
+        (notice.refNo && normalizeBizNo(x.refNo) === normalizeBizNo(notice.refNo)),
+    );
     const row = {
       title: notice.title,
       agency: notice.agency,
@@ -186,6 +227,8 @@ async function appendCatalog(notice) {
       region: notice.region,
       kind: notice.kind,
       refNo: notice.refNo,
+      bidNtceNo: notice.bidNtceNo || null,
+      bidNtceOrd: notice.bidNtceOrd || null,
       noticeKey: notice.noticeKey,
     };
     if (idx >= 0) list[idx] = { ...list[idx], ...row };
@@ -209,25 +252,36 @@ async function readCache(refNo) {
  * 사업번호로 공개 공고를 가져와 캐시·카탈로그에 저장
  */
 export async function scrapeByBizNo(raw) {
-  const refNo = normalizeBizNo(raw);
-  if (!/^R\d{2}[A-Z0-9]+$/i.test(refNo)) {
-    return null;
+  if (!looksLikeBizNo(raw)) return null;
+  const { core, ord, full } = splitBizNo(raw);
+  // 짧은 뒷자리만으로는 스크래핑 URL을 만들 수 없음
+  if (/^\d{5,8}$/.test(core) && core.length < 10) return null;
+
+  const candidates = [full, core, ord ? `${core}-${ord}` : null, ord ? `${core}${ord}` : null].filter(
+    Boolean,
+  );
+
+  for (const refNo of candidates) {
+    const cached = await readCache(refNo);
+    if (cached?.baseAmount) return { ...cached, source: cached.source || "cache" };
   }
 
-  const cached = await readCache(refNo);
-  if (cached?.baseAmount) return { ...cached, source: cached.source || "cache" };
-
   const errors = [];
-  for (const fn of [fetchFromJodaln, fetchFromCraftspace]) {
-    try {
-      const notice = await fn(refNo);
-      if (notice?.baseAmount || notice?.title) {
-        await writeCache(notice);
-        await appendCatalog(notice);
-        return notice;
+  for (const refNo of candidates) {
+    for (const fn of [fetchFromGonggongIlgam, fetchFromJodaln, fetchFromCraftspace]) {
+      try {
+        const notice = await fn(refNo);
+        if (notice?.baseAmount || notice?.title) {
+          notice.refNo = notice.refNo || core;
+          notice.bidNtceNo = notice.bidNtceNo || core;
+          if (ord) notice.bidNtceOrd = ord;
+          await writeCache(notice);
+          await appendCatalog(notice);
+          return notice;
+        }
+      } catch (err) {
+        errors.push(String(err.message || err));
       }
-    } catch (err) {
-      errors.push(String(err.message || err));
     }
   }
   throw new Error(errors.join(" | ") || "공개 공고를 찾지 못했습니다.");

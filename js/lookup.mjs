@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferKind, inferNoticeKey, inferRegion } from "./calc.js";
 import { scrapeByBizNo } from "./scrape-notice.mjs";
+import { bizNoMatch, looksLikeBizNo, normalizeBizNo, splitBizNo } from "./biz-no.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -33,10 +34,6 @@ function itemsOf(payload) {
   if (!body) return [];
   const raw = body.items?.item ?? body.item ?? [];
   return Array.isArray(raw) ? raw : raw ? [raw] : [];
-}
-
-function looksLikeBizNo(q) {
-  return /^[A-Za-z]\d{2}[A-Za-z]{0,3}\d{5,}$/i.test(q.replace(/\s/g, "")) || /^R\d+/i.test(q);
 }
 
 function mapNotice(row, extra = {}) {
@@ -91,19 +88,64 @@ async function fetchBaseAmount(key, bidNtceNo) {
   }
 }
 
-async function searchOpenApi(key, query) {
-  const q = query.trim();
-  const params = new URLSearchParams({
-    serviceKey: key,
-    pageNo: "1",
-    numOfRows: "20",
-    inqryDiv: "1",
-    type: "json",
-  });
+function rowMatchesQuery(row, q) {
+  const keys = [row.refNo, row.bidNtceNo, row.bidNtceNo && row.bidNtceOrd
+    ? `${row.bidNtceNo}-${row.bidNtceOrd}`
+    : null].filter(Boolean);
+  return keys.some((k) => bizNoMatch(k, q));
+}
 
-  // 최근 90일 창을 7일씩 나눠 검색 (API 기간 제한)
-  const end = new Date();
+async function searchOpenApi(key, query) {
+  const q = normalizeBizNo(query);
+  const { core, ord } = splitBizNo(q);
   const collected = [];
+
+  // 1) 공고번호 정확 조회 (2026LNF… / R26… 모두)
+  if (looksLikeBizNo(q) && core.length >= 8) {
+    const exact = new URLSearchParams({
+      serviceKey: key,
+      pageNo: "1",
+      numOfRows: "20",
+      inqryDiv: "2",
+      type: "json",
+      bidNtceNo: core,
+    });
+    if (ord) exact.set("bidNtceOrd", ord);
+    try {
+      const data = await fetchJson(`${BID_BASE}/getBidPblancListInfoServcPPSSrch?${exact}`);
+      for (const row of itemsOf(data)) {
+        if (rowMatchesQuery(row, q) || String(row.bidNtceNo || "").toUpperCase() === core) {
+          collected.push(row);
+        }
+      }
+    } catch {
+      /* skip */
+    }
+    for (const op of [
+      "getBidPblancListInfoServc",
+      "getBidPblancListInfoCnstwk",
+      "getBidPblancListInfoThng",
+    ]) {
+      try {
+        const p = new URLSearchParams({
+          serviceKey: key,
+          pageNo: "1",
+          numOfRows: "10",
+          inqryDiv: "2",
+          type: "json",
+          bidNtceNo: core,
+        });
+        if (ord) p.set("bidNtceOrd", ord);
+        const data = await fetchJson(`${BID_BASE}/${op}?${p}`);
+        for (const row of itemsOf(data)) collected.push(row);
+      } catch {
+        /* skip */
+      }
+    }
+  }
+
+  // 2) 기간 검색: refNo / 부분번호
+  const end = new Date();
   for (let i = 0; i < 13 && collected.length < 20; i++) {
     const to = new Date(end);
     to.setDate(to.getDate() - i * 7);
@@ -113,23 +155,32 @@ async function searchOpenApi(key, query) {
       const x = (n) => String(n).padStart(2, "0");
       return `${d.getFullYear()}${x(d.getMonth() + 1)}${x(d.getDate())}${x(d.getHours())}${x(d.getMinutes())}`;
     };
-    const local = new URLSearchParams(params);
-    local.set("inqryBgnDt", p(from));
-    local.set("inqryEndDt", p(to));
-    if (looksLikeBizNo(q)) local.set("refNo", q.replace(/\s/g, ""));
-    else local.set("bidNtceNm", q);
+    const local = new URLSearchParams({
+      serviceKey: key,
+      pageNo: "1",
+      numOfRows: "20",
+      inqryDiv: "1",
+      type: "json",
+      inqryBgnDt: p(from),
+      inqryEndDt: p(to),
+    });
+    if (looksLikeBizNo(q)) {
+      // 긴 번호는 refNo, 짧은 뒷자리는 공고번호 필드에 넣어 봄
+      if (core.length >= 10) local.set("refNo", core);
+      else local.set("bidNtceNo", core);
+    } else {
+      local.set("bidNtceNm", q);
+    }
 
     try {
       const data = await fetchJson(`${BID_BASE}/getBidPblancListInfoServcPPSSrch?${local}`);
       for (const row of itemsOf(data)) {
         const title = row.bidNtceNm || "";
-        const ref = row.refNo || "";
         if (looksLikeBizNo(q)) {
-          if (!ref.includes(q.replace(/\s/g, "")) && !String(row.bidNtceNo || "").includes(q)) continue;
-        } else if (!title.includes(q) && !q.split(/\s+/).every((t) => t.length < 2 || title.includes(t))) {
-          // 부분 일치: 쿼리 전체가 제목에 있거나, 긴 토큰이 포함
+          if (!rowMatchesQuery(row, q)) continue;
+        } else {
           const tokens = q.split(/\s+/).filter((t) => t.length >= 2);
-          if (!tokens.some((t) => title.includes(t))) continue;
+          if (!title.includes(q) && !tokens.some((t) => title.includes(t))) continue;
         }
         collected.push(row);
       }
@@ -156,7 +207,8 @@ async function searchOpenApi(key, query) {
 }
 
 async function searchLocal(query) {
-  const q = query.trim().toLowerCase();
+  const q = normalizeBizNo(query);
+  const qLower = q.toLowerCase();
   const catalogPath = path.join(ROOT, "data", "catalog.json");
   const historyPath = path.join(ROOT, "data", "history.json");
   let rows = [];
@@ -189,12 +241,12 @@ async function searchLocal(query) {
   const scored = rows
     .map((r) => {
       const title = (r.title || "").toLowerCase();
-      const ref = String(r.refNo || r.bidNtceNo || "").toLowerCase();
+      const candidates = [r.refNo, r.bidNtceNo, r.noticeKey].filter(Boolean);
       let score = 0;
-      if (ref && (ref === q || ref.includes(q))) score += 100;
-      if (title === q) score += 90;
-      if (title.includes(q)) score += 50;
-      for (const t of q.split(/\s+/).filter((x) => x.length >= 2)) {
+      if (candidates.some((c) => bizNoMatch(c, q))) score += 100;
+      if (title === qLower) score += 90;
+      if (title.includes(qLower)) score += 50;
+      for (const t of qLower.split(/\s+/).filter((x) => x.length >= 2)) {
         if (title.includes(t)) score += 8;
       }
       return { ...r, score };
@@ -220,20 +272,12 @@ async function searchLocal(query) {
 
 export async function lookupNotices(query) {
   await loadEnv();
-  const q = String(query || "").trim();
+  const q = normalizeBizNo(query);
   if (!q) return { query: q, results: [], source: "none" };
 
   const local = await searchLocal(q);
-  if (local.length) {
-    return {
-      query: q,
-      results: local.slice(0, 20),
-      source: "local",
-      hasApiKey: Boolean(process.env.DATA_GO_KR_SERVICE_KEY || process.env.SERVICE_KEY),
-    };
-  }
 
-  // 로컬에 없으면 사업번호로 공개 페이지에서 가져옴
+  // 로컬에 있어도 번호 조회는 원격도 병행(최신 보강). 단 로컬만으로 충분하면 즉시 반환하지 않고 합침.
   let scraped = [];
   let scrapeWarning = null;
   if (looksLikeBizNo(q)) {
@@ -247,17 +291,24 @@ export async function lookupNotices(query) {
 
   const key = process.env.DATA_GO_KR_SERVICE_KEY || process.env.SERVICE_KEY;
   let remote = [];
-  if (!scraped.length && key) {
+  if (key) {
     try {
       remote = await searchOpenApi(key, q);
     } catch (err) {
       scrapeWarning = [scrapeWarning, String(err.message || err)].filter(Boolean).join(" | ");
     }
+  } else if (!scraped.length && !local.length && looksLikeBizNo(q)) {
+    scrapeWarning = [
+      scrapeWarning,
+      "공공데이터 API 키가 없어 2026LNF… 형식 공고번호 조회가 제한됩니다. Vercel에 DATA_GO_KR_SERVICE_KEY를 넣으세요.",
+    ]
+      .filter(Boolean)
+      .join(" | ");
   }
 
   const merged = new Map();
   for (const r of [...scraped, ...remote, ...local]) {
-    const id = r.bidNtceNo || r.refNo || r.title;
+    const id = `${r.bidNtceNo || ""}-${r.bidNtceOrd || ""}-${r.refNo || r.title}`;
     if (!merged.has(id)) merged.set(id, r);
   }
 
