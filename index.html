@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>투찰 구간 보조 · 사내</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <p class="brand-name">투찰 구간 보조</p>
+            <p class="brand-sub">자격 확인된 공고만 · 최종 결정은 담당자</p>
+          </div>
+        </div>
+        <div class="top-meta">
+          <span class="pill">용역 · 추첨</span>
+          <span class="pill muted" id="syncLabel">유사사례 자동취합 · 샘플 42건</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel notice" aria-labelledby="noticeTitle">
+          <div class="panel-head">
+            <h1 id="noticeTitle">공고 고르기</h1>
+            <p class="hint">나라장터 <strong>사업번호</strong>를 붙여넣으면 바로 채웁니다. (예: R26BK01839679)</p>
+          </div>
+          <div class="lookup-row">
+            <label class="field grow">
+              <span>사업번호</span>
+              <input
+                id="lookupInput"
+                type="text"
+                placeholder="예: R26BK01839679"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
+            <button type="button" class="btn primary" id="lookupBtn">불러오기</button>
+          </div>
+          <p class="lookup-msg" id="lookupMsg" role="status" aria-live="polite"></p>
+          <div class="lookup-results" id="lookupResults" hidden></div>
+          <div class="notice-form">
+            <label class="field span-2">
+              <span>공고명 (자동 채움 · 수정 가능)</span>
+              <input id="titleInput" type="text" placeholder="불러오면 자동으로 채워집니다" />
+            </label>
+            <label class="field">
+              <span>수요기관</span>
+              <input id="agencyInput" type="text" placeholder="예: 경기도" />
+            </label>
+            <label class="field">
+              <span>낙찰방식</span>
+              <input id="methodInput" type="text" placeholder="예: 추첨" value="추첨" />
+            </label>
+            <label class="field">
+              <span>기초·추정금액 (원)</span>
+              <input id="baseInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="28600000" />
+            </label>
+            <label class="field">
+              <span>낙찰하한율 (%)</span>
+              <input id="floorRateInput" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="87.85" />
+            </label>
+            <label class="field">
+              <span>지역</span>
+              <select id="regionInput" aria-label="지역">
+                <option value="경기">경기</option>
+                <option value="서울">서울</option>
+                <option value="인천">인천</option>
+                <option value="경남">경남</option>
+                <option value="기타">기타</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>종류</span>
+              <select id="kindInput" aria-label="종류">
+                <option value="석면농도·비산측정">석면농도·비산측정</option>
+                <option value="석면해체전측정">석면해체전측정</option>
+                <option value="기타">기타</option>
+              </select>
+            </label>
+            <label class="field span-2">
+              <span>동일공고 키 (재공고 묶기, 비우면 공고명으로 추정)</span>
+              <input id="noticeKeyInput" type="text" placeholder="예: gg-old-hall-asbestos" />
+            </label>
+          </div>
+          <div class="notice-grid notice-live" id="noticeDetail"></div>
+        </section>
+
+        <section class="panel cost" aria-labelledby="costTitle">
+          <div class="panel-head">
+            <h2 id="costTitle">손익 하한 점검</h2>
+            <p class="hint">산정안과 별도로, 확정가가 원가 아래로 내려가는지만 경고합니다.</p>
+          </div>
+          <div class="cost-grid cost-grid-2">
+            <label class="field">
+              <span>실행원가 (원)</span>
+              <input id="costInput" type="number" min="0" step="1000" inputmode="numeric" />
+            </label>
+            <label class="field">
+              <span>최소 수용 마진 (%)</span>
+              <input id="minMarginInput" type="number" min="0" max="100" step="0.1" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel history" aria-labelledby="historyTitle">
+          <div class="panel-head">
+            <h2 id="historyTitle">자동 취합 근거</h2>
+            <p class="hint" id="historySummary"></p>
+          </div>
+          <div class="tabs" id="historyTabs" role="tablist" aria-label="근거 데이터">
+            <button type="button" class="tab active" data-tab="kind" role="tab">1 · 동일지역·종류</button>
+            <button type="button" class="tab" data-tab="year" role="tab">2 · 1년 고확률</button>
+            <button type="button" class="tab" data-tab="same" role="tab">3 · 동일공고</button>
+          </div>
+          <div class="hist-stats" id="histStats"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>공고</th>
+                  <th>기관</th>
+                  <th class="num">기초·추정</th>
+                  <th class="num">낙찰가</th>
+                  <th class="num">사정률</th>
+                </tr>
+              </thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel plans" aria-labelledby="plansTitle">
+          <div class="panel-head">
+            <h2 id="plansTitle">산정 기준 3안</h2>
+            <p class="hint">확률·이력을 비교한 참고가입니다. 최종은 담당자가 고릅니다.</p>
+          </div>
+          <div class="plan-grid" id="planGrid" role="radiogroup" aria-label="산정안 선택"></div>
+        </section>
+
+        <section class="panel decide" aria-labelledby="decideTitle">
+          <div class="panel-head">
+            <h2 id="decideTitle">최종 결정</h2>
+            <p class="hint">자동 투찰 없음. 확정가만 저장합니다.</p>
+          </div>
+          <div class="decide-row">
+            <label class="field">
+              <span>선택</span>
+              <select id="decisionSource" aria-label="최종 선택 출처">
+                <option value="A">A · 동일종류 낙찰</option>
+                <option value="B">B · 1년 고확률 구간</option>
+                <option value="C">C · 동일·유사 공고 이력</option>
+                <option value="custom">직접 입력</option>
+              </select>
+            </label>
+            <label class="field grow">
+              <span>확정 투찰가 (원)</span>
+              <input id="finalBid" type="number" min="0" step="1000" inputmode="numeric" />
+            </label>
+            <label class="field grow">
+              <span>메모</span>
+              <input id="decisionMemo" type="text" placeholder="결정 이유 (선택)" />
+            </label>
+            <button type="button" class="btn primary" id="saveBtn">확정 저장</button>
+          </div>
+          <p class="save-msg" id="saveMsg" role="status" aria-live="polite"></p>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

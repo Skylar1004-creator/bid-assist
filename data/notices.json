@@ -1,0 +1,32 @@
+[
+  {
+    "id": "gg-asbestos-1",
+    "title": "경기도청 옛청사(제1별관 등) 석면농도 및 비산정도 측정 용역",
+    "agency": "경기도",
+    "method": "추첨",
+    "baseAmount": 28600000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면농도·비산측정",
+    "keywords": ["석면", "비산", "농도", "측정"],
+    "industry": "환경진단·측정",
+    "noticeKey": "gg-old-hall-asbestos",
+    "defaultCost": 24200000,
+    "defaultMinMargin": 4
+  },
+  {
+    "id": "gg-asbestos-2",
+    "title": "공공청사 석면해체 전 농도·비산 측정 용역",
+    "agency": "수원시",
+    "method": "추첨",
+    "baseAmount": 19800000,
+    "floorRate": 0.8785,
+    "region": "경기",
+    "kind": "석면해체전측정",
+    "keywords": ["석면", "해체", "농도", "측정"],
+    "industry": "환경진단·측정",
+    "noticeKey": "suwon-asbestos-pre",
+    "defaultCost": 16900000,
+    "defaultMinMargin": 3.5
+  }
+]

@@ -1,0 +1,6 @@
+.env
+.env.*
+data/cache
+data/decisions.json
+node_modules
+.git

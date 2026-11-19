@@ -1,0 +1,15 @@
+{
+  "name": "bid-assist",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "sync": "node sync.mjs",
+    "sync:90": "node sync.mjs --days 90 --keyword 석면",
+    "deploy": "vercel --prod"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
