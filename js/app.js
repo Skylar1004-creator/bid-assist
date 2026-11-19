@@ -336,9 +336,7 @@ function applyNotice(n) {
   els.floorRateInput.value =
     n.floorRate != null ? String(Number((n.floorRate * 100).toFixed(2))) : "87.85";
   if (n.region) els.regionInput.value = n.region;
-  if (n.kind && [...els.kindInput.options].some((o) => o.value === n.kind)) {
-    els.kindInput.value = n.kind;
-  }
+  if (n.kind) els.kindInput.value = n.kind;
   els.noticeKeyInput.value = n.noticeKey || n.refNo || n.bidNtceNo || "";
   delete els.noticeKeyInput.dataset.manual;
   // 새 공고를 불러오면 원가도 기초의 85%로 다시 맞춤
@@ -476,7 +474,7 @@ function scheduleAutoLookup() {
 }
 
 function setExample() {
-  els.lookupInput.value = "R26BK01839679";
+  els.lookupInput.value = "2026LNF007647040-01";
   els.titleInput.value = "";
   els.agencyInput.value = "";
   els.methodInput.value = "추첨";
@@ -484,7 +482,7 @@ function setExample() {
   if (els.plannedInput) els.plannedInput.value = "";
   els.floorRateInput.value = "87.85";
   els.regionInput.value = "경기";
-  els.kindInput.value = "석면농도·비산측정";
+  els.kindInput.value = "";
   els.noticeKeyInput.value = "";
   els.costInput.value = "";
   els.minMarginInput.value = "4";

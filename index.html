@@ -40,7 +40,7 @@
               <input
                 id="lookupInput"
                 type="text"
-                placeholder="예: R26BK01839679"
+                placeholder="예: 2026LNF007647040-01 · R26BK… · 뒷자리 47040"
                 autocomplete="off"
                 spellcheck="false"
               />
@@ -85,14 +85,32 @@
               </select>
             </label>
             <label class="field">
-              <span>종류</span>
-              <select id="kindInput" aria-label="종류">
-                <option value="청소">청소</option>
-                <option value="석면농도·비산측정">석면농도·비산측정</option>
-                <option value="석면해체전측정">석면해체전측정</option>
-                <option value="안전진단">안전진단</option>
-                <option value="기타">기타</option>
-              </select>
+              <span>종류 (목록 고르기 · 직접 입력 가능)</span>
+              <input
+                id="kindInput"
+                type="text"
+                list="kindList"
+                aria-label="종류"
+                placeholder="예: 청소, 안전진단, 정보시스템·IT"
+                autocomplete="off"
+              />
+              <datalist id="kindList">
+                <option value="청소"></option>
+                <option value="석면농도·비산측정"></option>
+                <option value="석면해체전측정"></option>
+                <option value="안전진단"></option>
+                <option value="시설물유지·보수"></option>
+                <option value="경비·보안"></option>
+                <option value="조경"></option>
+                <option value="폐기물·환경"></option>
+                <option value="정보시스템·IT"></option>
+                <option value="교육·연수"></option>
+                <option value="설계·감리"></option>
+                <option value="공사"></option>
+                <option value="물품"></option>
+                <option value="기타용역"></option>
+                <option value="기타"></option>
+              </datalist>
             </label>
             <label class="field span-2">
               <span>동일공고 키 (재공고 묶기, 비우면 공고명으로 추정)</span>

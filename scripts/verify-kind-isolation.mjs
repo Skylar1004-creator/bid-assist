@@ -26,11 +26,13 @@ const asOf = new Date("2026-11-19");
 assert(resolveNoticeKind("학교 청소용역", "석면농도·비산측정") === "청소", "청소 제목 > 석면 선택");
 assert(resolveNoticeKind("정밀안전진단", "청소") === "안전진단", "안전진단 제목 > 청소 선택");
 assert(resolveNoticeKind("석면농도 측정", "청소") === "석면농도·비산측정", "석면 제목 > 청소 선택");
-assert(resolveNoticeKind("일반 용역", "청소") === "청소", "단서 없으면 선택값 유지");
+assert(resolveNoticeKind("일반 용역", "청소") === "기타용역", "용역 제목 → 기타용역");
+assert(resolveNoticeKind("단순안내", "경비·보안") === "경비·보안", "단서 없으면 선택값 유지");
+assert(resolveNoticeKind("단순안내", "우리만의종류") === "우리만의종류", "직접 입력 종류 유지");
 
 for (const kind of ["청소", "안전진단", "기타"]) {
   const title =
-    kind === "청소" ? "OO학교 청소용역" : kind === "안전진단" ? "OO 정밀안전진단" : "일반 용역";
+    kind === "청소" ? "OO학교 청소용역" : kind === "안전진단" ? "OO 정밀안전진단" : "단순안내";
   const notice = {
     title,
     agency: "수원시",

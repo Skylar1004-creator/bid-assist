@@ -1,4 +1,4 @@
-/** 나라장터 사업번호·공고번호 정규화/매칭 */
+/** 나라장터·국방 등 사업번호/공고번호 — 형식에 묶이지 않고 폭넓게 인식 */
 
 export function normalizeBizNo(raw) {
   return String(raw || "")
@@ -8,31 +8,56 @@ export function normalizeBizNo(raw) {
 }
 
 /**
- * 2026LNF007647040-01 → { full, core: 2026LNF007647040, ord: 01 }
- * R26BK01578429 → { full, core, ord: null }
+ * 다양한 차수 표기 분리
+ * - 2026LNF007647040-01
+ * - 2026LNF007647040-N
+ * - 2026LNF007647040-N-001
+ * - R26BK01578429
  */
 export function splitBizNo(raw) {
   const full = normalizeBizNo(raw);
-  const m = full.match(/^(.+)-(\d{1,2})$/);
+  if (!full) return { full: "", core: "", ord: null };
+
+  let core = full;
+  let ord = null;
+
+  let m = full.match(/^(.*)-N-(\d{1,3})$/i);
   if (m) {
+    core = m[1];
+    ord = m[2].padStart(2, "0");
+    return { full, core, ord };
+  }
+  m = full.match(/^(.*)-N$/i);
+  if (m) {
+    return { full, core: m[1], ord: null };
+  }
+  m = full.match(/^(.+)-(\d{1,2})$/);
+  if (m && m[1].length >= 6) {
     return { full, core: m[1], ord: m[2].padStart(2, "0") };
   }
-  return { full, core: full, ord: null };
+  return { full, core, ord };
 }
 
 /**
- * 인식 대상:
- * - R26BK… 사업번호
- * - 2026LNF007647040 / 2026LNF007647040-01 공고번호(+차수)
- * - 숫자 5자리 이상 뒷자리(예: 47040)
+ * 사업·공고번호로 볼지 — 한글 제목은 제외, 영문·숫자 ID는 폭넓게 허용
+ * 예: R26BK…, 2026LNF…-01, PS2026LNF47040, B26…, 47040
  */
 export function looksLikeBizNo(raw) {
   const { core } = splitBizNo(raw);
-  if (!core) return false;
+  if (!core || core.length < 5) return false;
+  if (/[가-힣]/.test(core)) return false;
+  if (!/\d/.test(core)) return false;
+
   if (/^R\d{2}[A-Z0-9]{5,}$/i.test(core)) return true;
-  if (/^\d{4}[A-Z]{2,5}\d{5,}$/i.test(core)) return true;
-  if (/^[A-Z]\d{2}[A-Z]{1,4}\d{5,}$/i.test(core)) return true;
+  if (/^\d{4}[A-Z]{2,8}\d{4,}$/i.test(core)) return true;
+  if (/^[A-Z]{1,8}\d{2,}[A-Z0-9]*$/i.test(core)) return true;
+  if (/^[A-Z]\d{2}[A-Z]{0,6}\d{4,}$/i.test(core)) return true;
   if (/^\d{5,}$/.test(core)) return true;
+  // 그 외 영문·숫자 조합(길이 8+, 숫자 4개 이상)
+  if (/^[A-Z0-9\-_]{8,}$/i.test(core)) {
+    const digits = (core.match(/\d/g) || []).length;
+    if (digits >= 4) return true;
+  }
   return false;
 }
 
@@ -47,9 +72,11 @@ export function bizNoMatch(candidate, query) {
     return true;
   }
   if (a.core.includes(b.core) || b.core.includes(a.core)) return true;
-  // 뒷자리: 쿼리 5자 이상일 때만 (오탐 완화)
   if (b.core.length >= 5 && a.core.endsWith(b.core)) return true;
   if (a.core.length >= 5 && b.core.endsWith(a.core)) return true;
+  // 참조번호 PS…47040 ↔ 공고번호 …7647040 뒷자리
+  if (b.core.length >= 5 && a.full.includes(b.core)) return true;
+  if (a.core.length >= 5 && b.full.includes(a.core)) return true;
   return false;
 }
 
@@ -60,5 +87,7 @@ export function bizNoSearchKeys(raw) {
   if (full) keys.add(full);
   if (core) keys.add(core);
   if (core && ord) keys.add(`${core}-${ord}`);
+  if (core && ord) keys.add(`${core}-N`);
+  if (core && ord) keys.add(`${core}-N-${ord}`);
   return [...keys];
 }

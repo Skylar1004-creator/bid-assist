@@ -71,21 +71,41 @@ function awarded(history) {
     .filter((c) => c.award != null && c.rate != null && c.base > 0);
 }
 
+/** 자주 쓰는 종류 제안(직접 입력도 가능) */
 export const KIND_OPTIONS = [
   "청소",
   "석면농도·비산측정",
   "석면해체전측정",
   "안전진단",
+  "시설물유지·보수",
+  "경비·보안",
+  "조경",
+  "폐기물·환경",
+  "정보시스템·IT",
+  "교육·연수",
+  "설계·감리",
+  "공사",
+  "물품",
+  "기타용역",
   "기타",
 ];
 
-/** 종류 계열 — 청소↔석면↔안전진단↔기타 교차 금지 */
+/** 종류 계열 — 서로 다른 종류는 표본을 섞지 않음(석면 세부만 예외) */
 export function kindFamily(kind = "") {
-  const k = String(kind || "");
+  const k = String(kind || "").trim();
+  if (!k || k === "기타") return "other";
   if (k.includes("석면")) return "asbestos";
-  if (k === "청소" || k.includes("청소") || k.includes("미화")) return "cleaning";
-  if (k === "안전진단" || k.includes("안전진단") || k.includes("정밀안전")) return "safety";
-  if (k === "기타" || !k) return "other";
+  if (/청소|미화/.test(k)) return "cleaning";
+  if (/안전진단|정밀안전|내진/.test(k)) return "safety";
+  if (/시설물|유지|보수|점검/.test(k) && !/안전진단|석면/.test(k)) return "facility";
+  if (/경비|보안|청원경찰/.test(k)) return "security";
+  if (/조경|수목/.test(k)) return "landscape";
+  if (/폐기물|환경|음식물/.test(k)) return "waste";
+  if (/정보|시스템|IT|소프트웨어|유지관리\s*용역/.test(k)) return "it";
+  if (/교육|연수|강의/.test(k)) return "edu";
+  if (/설계|감리/.test(k)) return "design";
+  if (k === "공사" || /공사$/.test(k)) return "construction";
+  if (k === "물품" || /구매|납품/.test(k)) return "goods";
   return `solo:${k}`;
 }
 
@@ -115,13 +135,13 @@ export function guardKindCases(cases, noticeKind) {
 }
 
 /**
- * 공고명 단서가 있으면 선택값보다 공고명 우선(청소 공고 + 석면 선택 방지).
+ * 공고명 단서가 있으면 공고명 우선. 없으면 사용자가 고른/적은 종류 그대로(직접 입력 허용).
  */
 export function resolveNoticeKind(title = "", selected = "") {
   const fromTitle = inferKind(title);
   if (fromTitle !== "기타") return fromTitle;
-  if (selected && KIND_OPTIONS.includes(selected)) return selected;
-  return selected || "기타";
+  const sel = String(selected || "").trim();
+  return sel || "기타";
 }
 
 function pickScoped(steps, notice, asOf) {
@@ -465,6 +485,18 @@ export function inferKind(title = "") {
   if (t.includes("석면") && t.includes("해체")) return "석면해체전측정";
   if (t.includes("해체") && /석면|해체전/.test(t)) return "석면해체전측정";
   if (t.includes("석면")) return "석면농도·비산측정";
+  if (/경비|보안|청원경찰|시설경비/.test(t)) return "경비·보안";
+  if (/조경|수목|잔디/.test(t)) return "조경";
+  if (/폐기물|음식물|생활폐기|환경정화/.test(t)) return "폐기물·환경";
+  if (/정보시스템|소프트웨어|전산|홈페이지|유지보수\s*용역|시스템\s*유지/.test(t)) {
+    return "정보시스템·IT";
+  }
+  if (/교육|연수|강의|워크숍/.test(t)) return "교육·연수";
+  if (/설계|감리/.test(t) && !/시공/.test(t)) return "설계·감리";
+  if (/유지\s*보수|시설\s*관리|수선|점검\s*용역/.test(t)) return "시설물유지·보수";
+  if (/공사|건설|토목|건축/.test(t) && !/용역/.test(t)) return "공사";
+  if (/물품|구매|납품|장비\s*구입/.test(t)) return "물품";
+  if (/용역/.test(t)) return "기타용역";
   return "기타";
 }
 
