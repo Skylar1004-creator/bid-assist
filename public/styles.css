@@ -268,6 +268,16 @@ body {
   outline-offset: 1px;
 }
 
+.metric.danger {
+  border-color: #e0a8a8;
+  background: var(--danger-bg);
+}
+
+.metric.danger .value {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .metric {
   background: var(--card-2);
   border: 1px solid var(--line);

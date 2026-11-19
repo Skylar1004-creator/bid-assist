@@ -8,6 +8,7 @@ import {
 import { bizNoMatch, looksLikeBizNo, normalizeBizNo } from "./biz-no.js";
 import { critiqueCalc, critiqueLevelLabel } from "./critique.js";
 import { buildVerdict } from "./recommend.js";
+import { baseSourceLabel } from "./base-amount.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -27,6 +28,7 @@ const els = {
   agencyInput: document.getElementById("agencyInput"),
   methodInput: document.getElementById("methodInput"),
   baseInput: document.getElementById("baseInput"),
+  estimateInput: document.getElementById("estimateInput"),
   plannedInput: document.getElementById("plannedInput"),
   floorRateInput: document.getElementById("floorRateInput"),
   yegaHintInput: document.getElementById("yegaHintInput"),
@@ -68,6 +70,7 @@ const state = {
   verdict: null,
   lockFinal: false,
   autoInfer: true,
+  baseMeta: { baseSource: "manual", baseIsProxy: false, estimateAmount: null, budgetAmount: null },
   draftKey: "bid-assist-notice-draft",
   lookupTimer: null,
 };
@@ -81,6 +84,9 @@ function readNotice() {
   const agency = (els.agencyInput.value || "").trim();
   const method = (els.methodInput.value || "").trim() || "추첨";
   const baseAmount = Number(els.baseInput.value) || 0;
+  const estimateRaw = Number(els.estimateInput?.value);
+  const estimateAmount =
+    Number.isFinite(estimateRaw) && estimateRaw > 0 ? estimateRaw : state.baseMeta.estimateAmount;
   const plannedRaw = Number(els.plannedInput?.value);
   const plannedAmount = Number.isFinite(plannedRaw) && plannedRaw > 0 ? plannedRaw : null;
   const floorPct = Number(els.floorRateInput.value);
@@ -96,12 +102,24 @@ function readNotice() {
   const noticeKey =
     (els.noticeKeyInput.value || "").trim() || inferNoticeKey(title, agency) || null;
 
+  // 사용자가 기초 칸을 고치면 수동으로 간주(대리값 해제)
+  const typedBase = Number(els.baseInput.value) || 0;
+  const stillProxy =
+    state.baseMeta.baseIsProxy &&
+    typedBase > 0 &&
+    state.baseMeta.proxyAmount != null &&
+    Math.abs(typedBase - state.baseMeta.proxyAmount) < 1;
+
   return {
     id: "user-notice",
     title: title || "(공고명 미입력)",
     agency: agency || "-",
     method,
     baseAmount,
+    estimateAmount: estimateAmount || null,
+    budgetAmount: state.baseMeta.budgetAmount || null,
+    baseSource: stillProxy ? state.baseMeta.baseSource : typedBase > 0 ? "manual" : null,
+    baseIsProxy: stillProxy,
     plannedAmount,
     floorRate,
     yegaRateHint,
@@ -124,8 +142,6 @@ function readInputs() {
 }
 
 function renderNoticeLive(notice, calc) {
-  const floorAmt = notice.baseAmount * notice.floorRate;
-  const ref = notice.plannedAmount || notice.baseAmount;
   const yega =
     calc?.yegaFromNotice != null
       ? calc.yegaFromNotice
@@ -133,7 +149,18 @@ function renderNoticeLive(notice, calc) {
         ? calc.yegaRate
         : null;
   const floorHug = calc?.formula?.recommended?.bid;
+  const baseLabel = baseSourceLabel(notice.baseSource, notice.baseIsProxy);
+  const proxyWarn = notice.baseIsProxy
+    ? `<div class="metric danger"><span class="label">기초 경고</span><span class="value">추정·예산 대리값 — 인포21C와 어긋남</span></div>`
+    : "";
   els.noticeDetail.innerHTML = `
+    ${proxyWarn}
+    <div class="metric"><span class="label">기초금액</span><span class="value">${
+      notice.baseAmount ? `${won(notice.baseAmount)} · ${baseLabel}` : "-"
+    }</span></div>
+    <div class="metric"><span class="label">추정가격(참고)</span><span class="value">${
+      notice.estimateAmount ? won(notice.estimateAmount) : "-"
+    }</span></div>
     <div class="metric"><span class="label">업무·업종</span><span class="value">${
       notice.category || "-"
     }${notice.industry ? ` · ${notice.industry}` : ""}</span></div>
@@ -142,18 +169,15 @@ function renderNoticeLive(notice, calc) {
     <div class="metric"><span class="label">투찰마감</span><span class="value">${
       notice.deadline || "-"
     }</span></div>
-    <div class="metric"><span class="label">기초×하한(단순)</span><span class="value">${
-      notice.baseAmount && notice.floorRate ? won(floorAmt) : "-"
-    }</span></div>
     <div class="metric"><span class="label">예가사정율</span><span class="value">${
       yega == null ? "-" : `${(yega * 100).toFixed(3)}%`
     }</span></div>
-    <div class="metric"><span class="label">하한밀착(D)</span><span class="value">${
+    <div class="metric"><span class="label">하한밀착(기초×예가×하한)</span><span class="value">${
       floorHug != null ? won(floorHug) : "-"
     }</span></div>
-    <div class="metric"><span class="label">산정 기준액</span><span class="value">${
-      ref
-        ? `${won(ref)}${notice.plannedAmount ? " (예정가)" : " (기초·예정가 미입력)"}`
+    <div class="metric"><span class="label">예정·기준액</span><span class="value">${
+      calc?.refAmount
+        ? `${won(calc.refAmount)}${notice.plannedAmount ? " (예정가)" : " (기초×예가)"}`
         : "-"
     }</span></div>
     <div class="metric"><span class="label">A값 / 순공사</span><span class="value">${
@@ -508,6 +532,17 @@ function applyNotice(n) {
   els.agencyInput.value = n.agency || "";
   els.methodInput.value = n.method || "추첨";
   els.baseInput.value = n.baseAmount != null ? String(Math.round(n.baseAmount)) : "";
+  if (els.estimateInput) {
+    const est = n.estimateAmount ?? n.presmptPrce ?? null;
+    els.estimateInput.value = est != null && est > 0 ? String(Math.round(est)) : "";
+  }
+  state.baseMeta = {
+    baseSource: n.baseSource || (n.baseIsProxy ? "proxy" : n.baseAmount ? "bssamt" : null),
+    baseIsProxy: Boolean(n.baseIsProxy),
+    estimateAmount: n.estimateAmount ?? n.presmptPrce ?? null,
+    budgetAmount: n.budgetAmount ?? null,
+    proxyAmount: n.baseIsProxy && n.baseAmount != null ? n.baseAmount : null,
+  };
   const planned =
     n.plannedAmount ?? n.planned ?? n.yega ?? (n.awardAmount && n.awardRate ? n.awardAmount / n.awardRate : null);
   if (els.plannedInput) {
@@ -519,17 +554,22 @@ function applyNotice(n) {
   if (n.kind) els.kindInput.value = n.kind;
   els.noticeKeyInput.value = n.noticeKey || n.refNo || n.bidNtceNo || "";
   delete els.noticeKeyInput.dataset.manual;
-  // 새 공고를 불러오면 원가도 기초의 85%로 다시 맞춤
-  if (n.baseAmount != null) {
+  if (n.baseAmount != null && !n.baseIsProxy) {
     els.costInput.value = String(Math.round(n.baseAmount * 0.85));
   }
   if (!els.minMarginInput.value) els.minMarginInput.value = "4";
   if (n.refNo) els.lookupInput.value = n.refNo;
   els.lookupResults.hidden = true;
   els.lookupResults.innerHTML = "";
-  els.lookupMsg.textContent = n.baseAmount != null
-    ? `채움 완료 · 기초·추정 ${won(n.baseAmount)} (${n.source || "조회"})`
-    : "공고는 찾았지만 기초금액이 없어 직접 확인해 주세요.";
+  if (n.baseIsProxy) {
+    els.lookupMsg.textContent = `주의 · ${baseSourceLabel(n.baseSource, true)} ${won(
+      n.baseAmount,
+    )} — 원문 기초금액으로 고치세요 (${n.source || "조회"})`;
+  } else if (n.baseAmount != null) {
+    els.lookupMsg.textContent = `채움 완료 · 기초금액 ${won(n.baseAmount)} (${n.source || "조회"})`;
+  } else {
+    els.lookupMsg.textContent = "공고는 찾았지만 기초금액(bssamt)이 없어 직접 확인해 주세요.";
+  }
   state.autoInfer = true;
   refresh();
 }

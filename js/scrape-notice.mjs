@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferKind, inferNoticeKey, inferRegion } from "./calc.js";
+import { resolveNoticeAmounts } from "./base-amount.js";
 import { looksLikeBizNo, normalizeBizNo, splitBizNo } from "./biz-no.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,12 +72,18 @@ function parseJodaln(html, refNo) {
       /([가-힣A-Za-z0-9 ·]+교육지원청)/,
     ]) || null;
 
+  const labeledBase =
+    wonToNumber(pick(text, [/기초금액\s+([\d,]+원)/, /기초금액\s+([\d,.]+만원)/])) ||
+    wonToNumber(pick(html, [/기초금액[^0-9]*([\d,]+)/]));
+
   const budget =
     wonToNumber(pick(text, [/배정예산금액\s+([\d,]+원)/, /예산금액\s+([\d,.]+만원)/])) ||
-    wonToNumber(pick(text, [/사업금액\s+([\d,.]+만원)/, /예산\s+([\d,.]+만)/]));
+    wonToNumber(pick(text, [/사업금액\s+([\d,.]+만원)/, /예산\s+([\d,.]+만)/])) ||
+    wonToNumber(pick(html, [/예산금액[^0-9]*([\d,]+)/, /"budget"[^0-9]*([\d,]+)/]));
 
   const estimate =
-    wonToNumber(pick(text, [/추정가격\s+([\d,]+원)/, /추정가격\s+([\d,.]+만원)/])) || null;
+    wonToNumber(pick(text, [/추정가격\s+([\d,]+원)/, /추정가격\s+([\d,.]+만원)/])) ||
+    wonToNumber(pick(html, [/추정가격[^0-9]*([\d,]+)/]));
 
   const floorRaw = pick(text, [/낙찰하한율\s+([\d.]+)\s*%/]);
   const floorRate = floorRaw != null ? Number(floorRaw) / 100 : null;
@@ -89,13 +96,14 @@ function parseJodaln(html, refNo) {
     ]) || "수의";
   method = method.replace(/\s+/g, " ").trim().slice(0, 20);
 
-  // HTML 메타에서 예산·추정 재확인
-  const budgetMeta = wonToNumber(pick(html, [/예산금액[^0-9]*([\d,]+)/, /"budget"[^0-9]*([\d,]+)/]));
-  const estimateMeta = wonToNumber(pick(html, [/추정가격[^0-9]*([\d,]+)/]));
+  if (!title && !labeledBase && !budget && !estimate) return null;
 
-  if (!title && !budget && !budgetMeta) return null;
-
-  const baseAmount = budget || budgetMeta || estimate || estimateMeta;
+  const amounts = resolveNoticeAmounts({
+    labeledBase,
+    bssamt: labeledBase,
+    presmptPrce: estimate,
+    asignBdgtAmt: budget,
+  });
   const cleanTitle = (title || `공고 ${refNo}`).replace(/\s+/g, " ").trim().slice(0, 120);
   const cleanAgency = (agency || "-").replace(/\s+/g, " ").trim().slice(0, 80);
 
@@ -103,7 +111,11 @@ function parseJodaln(html, refNo) {
     title: cleanTitle,
     agency: cleanAgency,
     method,
-    baseAmount,
+    baseAmount: amounts.baseAmount,
+    estimateAmount: amounts.estimateAmount,
+    budgetAmount: amounts.budgetAmount,
+    baseSource: amounts.baseSource,
+    baseIsProxy: amounts.baseIsProxy,
     floorRate: floorRate ?? 0.8785,
     region: inferRegion(cleanAgency),
     kind: inferKind(cleanTitle),
@@ -111,7 +123,7 @@ function parseJodaln(html, refNo) {
     refNo,
     bidNtceNo: null,
     source: "jodaln",
-    presmptPrce: estimate || estimateMeta,
+    presmptPrce: amounts.estimateAmount,
   };
 }
 
@@ -132,16 +144,25 @@ async function fetchFromCraftspace(refNo) {
   const text = stripHtml(html);
   const title = pick(text, [/#\s*([^\n]+)/, /([가-힣A-Za-z0-9 ·]+석면[^\n]{0,40})/]);
   const agency = pick(text, [/수요기관\s+([^\n]+)/, /([가-힣]+교육지원청)/]);
+  const labeledBase = wonToNumber(pick(text, [/기초금액\s+([\d,]+원)/, /기초금액\s+([\d,.]+만)/]));
   const budget =
-    wonToNumber(pick(text, [/예산\s+([\d,.]+만)/, /기초금액\s+([\d,]+원)/])) ||
-    wonToNumber(pick(text, [/배정예산\s+([\d,]+원)/]));
+    wonToNumber(pick(text, [/배정예산\s+([\d,]+원)/, /예산\s+([\d,.]+만)/]));
+  const amounts = resolveNoticeAmounts({
+    labeledBase,
+    bssamt: labeledBase,
+    asignBdgtAmt: budget,
+  });
   const floorRaw = pick(text, [/낙찰하한율\s+([\d.]+)\s*%/]);
-  if (!title && !budget) throw new Error("craftspace parse fail");
+  if (!title && !amounts.baseAmount) throw new Error("craftspace parse fail");
   return {
     title: (title || `공고 ${refNo}`).trim(),
     agency: (agency || "-").trim(),
     method: "수의",
-    baseAmount: budget,
+    baseAmount: amounts.baseAmount,
+    estimateAmount: amounts.estimateAmount,
+    budgetAmount: amounts.budgetAmount,
+    baseSource: amounts.baseSource,
+    baseIsProxy: amounts.baseIsProxy,
     floorRate: floorRaw != null ? Number(floorRaw) / 100 : 0.8785,
     region: inferRegion(agency || ""),
     kind: inferKind(title || ""),
@@ -172,19 +193,32 @@ async function fetchFromGonggongIlgam(refNo) {
     pick(text, [/수요기관\s+([가-힣A-Za-z0-9]+)/, /공고기관\s+([가-힣A-Za-z0-9]+)/]) ||
     "제1보병사단";
   const agency = String(agencyRaw).replace(/\s+/g, " ").trim().slice(0, 40);
-  const base =
+  const labeledBase =
+    wonToNumber(pick(text, [/기초금액\s*([\d,]+)\s*원/, /기초금액\s*([\d.]+)\s*만/])) ||
+    num(pick(text, [/기초금액\s*([\d,]+)/]));
+  const estimate =
     wonToNumber(pick(text, [/추정가격\s*([\d,]+)\s*원/, /추정가격\s*([\d.]+)\s*만/])) ||
     num(pick(text, [/추정가격\s*([\d,]+)/]));
   const budget = wonToNumber(pick(text, [/배정예산\s*([\d,]+)\s*원/, /예산액[^\d]*([\d,]+)\s*원/]));
+  const amounts = resolveNoticeAmounts({
+    labeledBase,
+    bssamt: labeledBase,
+    presmptPrce: estimate,
+    asignBdgtAmt: budget,
+  });
   const floorRaw = pick(text, [/낙찰하한율\s*\(?\s*([\d.]+)\s*%/, /하한율\s*\(?\s*([\d.]+)\s*%/]);
   const refAlt = pick(text, [/참조번호\s*([A-Z0-9]+)/i]);
-  if (!title && !base && !budget) throw new Error("gonggongilgam parse fail");
+  if (!title && !amounts.baseAmount) throw new Error("gonggongilgam parse fail");
   const cleanTitle = (title || `공고 ${core}`).replace(/\s+/g, " ").trim().slice(0, 120);
   return {
     title: cleanTitle,
     agency,
     method: "최저가",
-    baseAmount: base || budget,
+    baseAmount: amounts.baseAmount,
+    estimateAmount: amounts.estimateAmount,
+    budgetAmount: amounts.budgetAmount,
+    baseSource: amounts.baseSource,
+    baseIsProxy: amounts.baseIsProxy,
     floorRate: floorRaw != null ? Number(floorRaw) / 100 : 0.88,
     region: /파주|경기/.test(text) ? "경기" : inferRegion(agency),
     kind: inferKind(cleanTitle),

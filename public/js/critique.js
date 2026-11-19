@@ -41,16 +41,36 @@ export function critiqueCalc(notice, calc, decision = {}) {
   const cost = decision.cost || 0;
   const minOk = cost > 0 ? cost * (1 + (decision.minMarginPct || 0) / 100) : 0;
 
-  // —— 입력·단위 검증 ——
+  // —— 입력·단위 검증 (기초금액 = 인포21C 축) ——
   if (!(notice.baseAmount > 0)) {
-    issues.push(issue("danger", "NO_BASE", "기초·추정금액이 없습니다. 이 상태의 산정은 숫자 장난입니다."));
+    issues.push(
+      issue(
+        "danger",
+        "NO_BASE",
+        "기초금액(bssamt)이 없습니다. 인포21C 산식은 기초에서 시작합니다. 추정·예산으로 때우지 마세요.",
+      ),
+    );
+  } else if (notice.baseIsProxy || calc.baseIsProxy) {
+    issues.push(
+      issue(
+        "danger",
+        "BASE_PROXY",
+        `지금 칸 금액은 기초가 아니라 ${
+          notice.baseSource === "estimate" || calc.baseSource === "estimate"
+            ? "추정가격"
+            : notice.baseSource === "budget" || calc.baseSource === "budget"
+              ? "배정예산"
+              : "대리값"
+        }입니다. 인포21C와 금액이 크게 벌어지는 전형적 원인입니다. 공고 원문 기초금액을 넣으세요.`,
+      ),
+    );
   }
   if (!usedPlanned) {
     issues.push(
       issue(
         "warn",
         "NO_PLANNED",
-        "예정가격이 비어 있습니다. 나라장터 사정률은 낙찰÷예정가인데, 지금은 기초에 곱하고 있습니다. 개찰 전 추정은 참고만 하세요.",
+        "예정가격이 비어 있습니다. 예가사정율(예정÷기초)을 공고 확정값으로 못 씁니다. 예상 예가사정율 힌트 또는 이력 중앙값을 참고만 하세요.",
       ),
     );
   } else if (notice.baseAmount > 0 && notice.plannedAmount > 0) {
@@ -60,7 +80,7 @@ export function critiqueCalc(notice, calc, decision = {}) {
         issue(
           "warn",
           "PLANNED_RATIO",
-          `예정/기초 비율이 ${k.toFixed(3)}입니다. 보통 0.95~1.05권인데 벗어납니다. 입력 자릿수·필드를 다시 보세요.`,
+          `예정/기초 비율이 ${k.toFixed(3)}입니다. 보통 0.95~1.05권인데 벗어납니다. 기초금액 자릿수·필드를 인포21C와 대조하세요.`,
         ),
       );
     }

@@ -63,12 +63,16 @@
               <input id="methodInput" type="text" placeholder="예: 추첨" value="추첨" />
             </label>
             <label class="field">
-              <span>기초·추정금액 (원)</span>
-              <input id="baseInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="28600000" />
+              <span>기초금액 (원) · 인포21C 축</span>
+              <input id="baseInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="bssamt · 추정·예산 금지" />
+            </label>
+            <label class="field">
+              <span>추정가격 (참고, 기초 아님)</span>
+              <input id="estimateInput" type="number" min="0" step="1000" inputmode="numeric" placeholder="presmptPrce · 산정에 안 씀" />
             </label>
             <label class="field">
               <span>예정가격 (원)</span>
-              <input id="plannedInput" type="number" min="0" step="1" inputmode="numeric" placeholder="개찰 후 예정가 · 없으면 기초로 계산" />
+              <input id="plannedInput" type="number" min="0" step="1" inputmode="numeric" placeholder="개찰 후 예정가 · 예가=예정÷기초" />
             </label>
             <label class="field">
               <span>낙찰하한율 (%)</span>
@@ -172,8 +176,8 @@
             </label>
           </div>
           <div class="formula-note hint">
-            인포21C 정리 항목 반영: <strong>예가사정율</strong>(예정÷기초) · <strong>A값</strong> · <strong>순공사원가</strong> ·
-            <strong>투찰률</strong>(낙찰÷예정, 나라장터 표시). D안은 하한밀착 산식입니다.
+            인포21C 축은 <strong>기초금액</strong>입니다. 투찰가 ≈ 기초 × 예가사정율(예정÷기초) × 투찰률(또는 하한).
+            추정가격·배정예산을 기초 칸에 넣으면 인포와 금액이 어긋납니다.
           </div>
           <div class="notice-grid notice-live" id="noticeDetail"></div>
         </section>

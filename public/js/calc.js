@@ -10,6 +10,11 @@ import {
   pickBidCandidates,
   yegaRate as calcYegaRate,
 } from "./bid-formula.js";
+import {
+  bidFromBase,
+  filterByBaseSimilarity,
+  baseDiffRatio,
+} from "./base-amount.js";
 
 function bidFloorRange(base, yega, floorRate, aValue) {
   if (aValue > 0) return bidWithAValue(base, yega, floorRate, aValue);
@@ -22,10 +27,14 @@ export function officialBidRate(award, planned) {
   return award / planned;
 }
 
-/** 투찰·구간 기준 금액: 예정가 우선, 없으면 기초 */
-export function bidReferenceAmount(notice) {
+/**
+ * 표시용 기준액: 예정가(있으면) 또는 기초×예가.
+ * 실제 투찰 산정은 항상 기초금액에서 출발한다(인포21C).
+ */
+export function bidReferenceAmount(notice, yega = null) {
   if (notice.plannedAmount != null && notice.plannedAmount > 0) return notice.plannedAmount;
   if (notice.planned != null && notice.planned > 0) return notice.planned;
+  if (notice.baseAmount > 0 && yega != null && yega > 0) return notice.baseAmount * yega;
   return notice.baseAmount > 0 ? notice.baseAmount : 0;
 }
 
@@ -65,16 +74,18 @@ export function withinLastYear(asOf, dateStr) {
 function withSimilarity(notice, cases, asOf) {
   return cases
     .map((c) => {
-      const priceDiff =
-        notice.baseAmount > 0 ? Math.abs(c.base - notice.baseAmount) / notice.baseAmount : 1;
-      let similarity = 60;
-      if (c.region === notice.region) similarity += 15;
-      if (c.kind === notice.kind) similarity += 15;
-      if (priceDiff <= 0.15) similarity += 12;
-      else if (priceDiff <= 0.35) similarity += 8;
-      else if (priceDiff <= 0.6) similarity += 4;
+      const priceDiff = baseDiffRatio(notice.baseAmount, c.base);
+      let similarity = 50;
+      if (c.region === notice.region) similarity += 12;
+      if (c.kind === notice.kind) similarity += 12;
+      // 기초금액 규모가 인포21C 대조의 핵심
+      if (priceDiff <= 0.1) similarity += 22;
+      else if (priceDiff <= 0.25) similarity += 16;
+      else if (priceDiff <= 0.4) similarity += 8;
+      else if (priceDiff <= 0.6) similarity += 2;
+      else similarity -= 18;
       if (c.awardedAt && withinLastYear(asOf, c.awardedAt)) similarity += 5;
-      return { ...c, similarity: Math.min(99, similarity) };
+      return { ...c, similarity: Math.max(1, Math.min(99, similarity)), baseDiff: priceDiff };
     })
     .sort((a, b) => b.similarity - a.similarity);
 }
@@ -161,21 +172,30 @@ export function resolveNoticeKind(title = "", selected = "") {
 function pickScoped(steps, notice, asOf) {
   const kind = notice.kind || "기타";
   for (const step of steps) {
-    const cases = guardKindCases(step.cases, kind);
+    const guarded = guardKindCases(step.cases, kind);
+    const { cases, scopeSuffix } = filterByBaseSimilarity(guarded, notice.baseAmount);
     if (cases.length >= 3) {
-      return { scope: step.label, cases: withSimilarity(notice, cases, asOf) };
-    }
-  }
-  for (const step of steps) {
-    const cases = guardKindCases(step.cases, kind);
-    if (cases.length >= 1) {
       return {
-        scope: `${step.label}(표본적음)`,
+        scope: `${step.label}${scopeSuffix}`,
         cases: withSimilarity(notice, cases, asOf),
+        baseBand: scopeSuffix,
       };
     }
   }
-  return { scope: `${kind} 표본 없음`, cases: [] };
+  for (const step of steps) {
+    const guarded = guardKindCases(step.cases, kind);
+    const { cases, scopeSuffix } = filterByBaseSimilarity(guarded, notice.baseAmount, {
+      minN: 1,
+    });
+    if (cases.length >= 1) {
+      return {
+        scope: `${step.label}(표본적음)${scopeSuffix}`,
+        cases: withSimilarity(notice, cases, asOf),
+        baseBand: scopeSuffix,
+      };
+    }
+  }
+  return { scope: `${kind} 표본 없음`, cases: [], baseBand: "" };
 }
 
 /** 1안: 지역·동일종류 → 전국·동일종류 → (석면만) 전국 석면계열 */
@@ -262,24 +282,28 @@ export function yearHighProbBand(notice, history, asOf = new Date()) {
   ];
 
   for (const step of steps) {
-    const cases = guardKindCases(step.cases, kind);
+    const guarded = guardKindCases(step.cases, kind);
+    const { cases, scopeSuffix } = filterByBaseSimilarity(guarded, notice.baseAmount);
     if (cases.length >= 3) {
       const band = rateBand(cases);
       if (band.band) {
-        return { scope: step.label, yearCases: cases, ...band };
+        return { scope: `${step.label}${scopeSuffix}`, yearCases: cases, ...band };
       }
     }
   }
 
   for (const step of steps) {
-    const cases = guardKindCases(step.cases, kind);
+    const guarded = guardKindCases(step.cases, kind);
+    const { cases, scopeSuffix } = filterByBaseSimilarity(guarded, notice.baseAmount, {
+      minN: 1,
+    });
     if (cases.length >= 1) {
       const rates = cases.map((c) => c.rate).sort((a, b) => a - b);
       const p50 = quantile(rates, 0.5);
       const p25 = quantile(rates, 0.25) ?? p50;
       const p75 = quantile(rates, 0.75) ?? p50;
       return {
-        scope: `${step.label}(중앙값)`,
+        scope: `${step.label}(중앙값)${scopeSuffix}`,
         yearCases: cases,
         band: [p25, p75],
         midRate: p50,
@@ -374,10 +398,8 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
   notice = { ...notice, kind: resolvedKind };
 
   const floorRate = notice.floorRate || 0;
-  // 단순 기초×하한 (예가 무시) — 참고용. 실제 하한은 예정×하한에 가깝다.
-  const floor = notice.baseAmount > 0 && floorRate > 0 ? notice.baseAmount * floorRate : 0;
+  const base = notice.baseAmount > 0 ? notice.baseAmount : 0;
   const minOk = cost * (1 + minMarginPct / 100);
-  const ref = bidReferenceAmount(notice);
   const usedPlanned = Boolean(
     (notice.plannedAmount != null && notice.plannedAmount > 0) ||
       (notice.planned != null && notice.planned > 0)
@@ -386,6 +408,7 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     notice.plannedAmount > 0 ? notice.plannedAmount : notice.planned > 0 ? notice.planned : null;
   const aValue = Number(notice.aValue) > 0 ? Number(notice.aValue) : 0;
   const netCost = Number(notice.netCost) > 0 ? Number(notice.netCost) : 0;
+  const baseIsProxy = Boolean(notice.baseIsProxy);
 
   const kindPack = sameKindCases(notice, history, asOf);
   const kindCases = guardKindCases(kindPack.cases, resolvedKind);
@@ -393,45 +416,9 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
   const kindP25 = quantile(kindRates, 0.25);
   const kindP50 = quantile(kindRates, 0.5);
   const kindP75 = quantile(kindRates, 0.75);
-  const kindOk = kindCases.length >= 1 && kindP50 != null && ref > 0;
-  const bidA = kindOk ? ref * kindP50 : null;
-  const rangeA =
-    kindOk && kindP25 != null && kindP75 != null
-      ? [ref * kindP25, ref * kindP75]
-      : kindOk
-        ? [bidA * 0.99, bidA * 1.01]
-        : null;
 
-  const yearRaw = yearHighProbBand(notice, history, asOf);
-  const yearCases = guardKindCases(yearRaw.yearCases, resolvedKind);
-  const year = { ...yearRaw, yearCases };
-  const bandOk = year.midRate != null && year.band != null && ref > 0 && yearCases.length >= 1;
-  const bidB = bandOk ? ref * year.midRate : null;
-  const rangeB = bandOk ? [ref * year.band[0], ref * year.band[1]] : null;
-
-  const samePack = sameNoticeHistory(notice, history);
-  const sameAll = guardKindCases(samePack.cases, resolvedKind);
-  const same = sameAll.filter((c) => c.award != null && c.rate != null);
-  const sameRates = same.map((c) => c.rate).sort((a, b) => a - b);
-  const sameP50 = quantile(sameRates, 0.5);
-  const sameOk = same.length >= 1 && sameP50 != null && ref > 0;
-  const latest = same[0];
-  const bidC = sameOk
-    ? same.length === 1
-      ? ref * latest.rate
-      : ref * sameP50
-    : null;
-  const rangeC = sameOk
-    ? same.length === 1
-      ? [bidC * 0.995, bidC * 1.005]
-      : [ref * sameRates[0], ref * sameRates[sameRates.length - 1]]
-    : null;
-
-  const pct = (n) => `${(n * 100).toFixed(2)}%`;
-  const rateNote = usedPlanned ? "예정가×투찰률" : "기초×투찰률(예정가 미입력)";
-
-  // —— 인포21C식: 예가사정율 → 하한밀착·A값·순공사 ——
-  const yegaFromNotice = calcYegaRate(plannedAmt, notice.baseAmount);
+  // —— 인포21C: 예가사정율은 예정÷기초. 투찰가도 기초×예가×투찰률 ——
+  const yegaFromNotice = calcYegaRate(plannedAmt, base);
   const yegaFromHist = historyYegaRates(kindCases);
   const yegaP50 = quantile(yegaFromHist, 0.5);
   const yegaP25 = quantile(yegaFromHist, 0.25);
@@ -442,8 +429,64 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
       : notice.yegaRateHint > 0
         ? notice.yegaRateHint
         : yegaP50;
+  const yegaOrOne = yega != null && yega > 0 ? yega : 1;
+  const ref = bidReferenceAmount(notice, yegaOrOne);
+  // 단순 기초×하한(참고). 실질 하한은 기초×예가×하한.
+  const floorSimple = base > 0 && floorRate > 0 ? base * floorRate : 0;
+  const floor =
+    base > 0 && floorRate > 0 && yega != null
+      ? bidFloorHug(base, yega, floorRate) ?? floorSimple
+      : floorSimple;
+
+  const kindOk = kindCases.length >= 1 && kindP50 != null && base > 0;
+  const bidA = kindOk ? bidFromBase(base, kindP50, yegaOrOne) : null;
+  const rangeA =
+    kindOk && kindP25 != null && kindP75 != null
+      ? [bidFromBase(base, kindP25, yegaOrOne), bidFromBase(base, kindP75, yegaOrOne)]
+      : kindOk
+        ? [bidA * 0.99, bidA * 1.01]
+        : null;
+
+  const yearRaw = yearHighProbBand(notice, history, asOf);
+  const yearCases = guardKindCases(yearRaw.yearCases, resolvedKind);
+  const year = { ...yearRaw, yearCases };
+  const bandOk = year.midRate != null && year.band != null && base > 0 && yearCases.length >= 1;
+  const bidB = bandOk ? bidFromBase(base, year.midRate, yegaOrOne) : null;
+  const rangeB = bandOk
+    ? [bidFromBase(base, year.band[0], yegaOrOne), bidFromBase(base, year.band[1], yegaOrOne)]
+    : null;
+
+  const samePack = sameNoticeHistory(notice, history);
+  const sameAll = guardKindCases(samePack.cases, resolvedKind);
+  const same = sameAll.filter((c) => c.award != null && c.rate != null);
+  const sameRates = same.map((c) => c.rate).sort((a, b) => a - b);
+  const sameP50 = quantile(sameRates, 0.5);
+  const sameOk = same.length >= 1 && sameP50 != null && base > 0;
+  const latest = same[0];
+  const bidC = sameOk
+    ? same.length === 1
+      ? bidFromBase(base, latest.rate, yegaOrOne)
+      : bidFromBase(base, sameP50, yegaOrOne)
+    : null;
+  const rangeC = sameOk
+    ? same.length === 1
+      ? [bidC * 0.995, bidC * 1.005]
+      : [
+          bidFromBase(base, sameRates[0], yegaOrOne),
+          bidFromBase(base, sameRates[sameRates.length - 1], yegaOrOne),
+        ]
+    : null;
+
+  const pct = (n) => `${(n * 100).toFixed(2)}%`;
+  const rateNote =
+    yegaFromNotice != null
+      ? `기초×예가(${pct(yega)})×투찰률`
+      : yega != null
+        ? `기초×예상예가(${pct(yega)})×투찰률`
+        : "기초×투찰률(예가 미확보·100%가정)";
+
   const formulaPack = pickBidCandidates({
-    base: notice.baseAmount,
+    base,
     yega,
     floorRate,
     aValue,
@@ -451,25 +494,27 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
   });
   const bidD = formulaPack.recommended?.bid ?? null;
   const rangeD =
-    yegaP25 != null && yegaP75 != null && notice.baseAmount > 0 && floorRate > 0
+    yegaP25 != null && yegaP75 != null && base > 0 && floorRate > 0
       ? [
-          bidFloorRange(notice.baseAmount, yegaP25, floorRate, aValue),
-          bidFloorRange(notice.baseAmount, yegaP75, floorRate, aValue),
+          bidFloorRange(base, yegaP25, floorRate, aValue),
+          bidFloorRange(base, yegaP75, floorRate, aValue),
         ]
       : bidD != null
         ? [bidD * 0.997, bidD * 1.003]
         : null;
-  const formulaOk = bidD != null && yega != null && floorRate > 0;
+  const formulaOk = bidD != null && yega != null && floorRate > 0 && base > 0;
 
   const flag = (bid, planId) => {
+    if (!(base > 0)) return { kind: "danger", text: "기초금액 없음 · 산정 금지" };
+    if (baseIsProxy) return { kind: "danger", text: "기초가 추정·예산 대리값 · 인포와 어긋남" };
     if (bid == null) return { kind: "warn", text: "표본 부족 · 맹신 금지" };
-    if (floor > 0 && bid < floor) return { kind: "danger", text: "하한 미만 · 무효" };
+    if (floor > 0 && bid + 0.5 < floor) return { kind: "danger", text: "하한 미만 · 무효" };
     if (cost > 0 && bid < minOk) return { kind: "warn", text: "원가·마진 미달" };
     const rate = ref > 0 ? bid / ref : null;
     if (rate != null && floorRate > 0 && rate < floorRate) {
       return { kind: "danger", text: "사정률 < 하한율" };
     }
-    if (!usedPlanned) return { kind: "warn", text: "예정가 미입력 · 참고만" };
+    if (!usedPlanned && yegaFromNotice == null) return { kind: "warn", text: "예정가 미입력 · 예상예가 참고" };
     if (planId === "A" && kindCases.length < 3) return { kind: "warn", text: "표본 빈약" };
     if (planId === "B" && yearCases.length < 3) return { kind: "warn", text: "1년 표본 빈약" };
     if (planId === "C" && String(samePack.scope || "").startsWith("유사")) {
@@ -483,7 +528,11 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
 
   return {
     floor,
+    floorSimple,
     minOk,
+    baseAmount: base,
+    baseIsProxy,
+    baseSource: notice.baseSource || (baseIsProxy ? "proxy" : base > 0 ? "manual" : null),
     refAmount: ref,
     usedPlanned,
     yegaRate: yega,

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferKind, inferNoticeKey, inferRegion } from "./calc.js";
+import { resolveNoticeAmounts } from "./base-amount.js";
 import { scrapeByBizNo } from "./scrape-notice.mjs";
 import { bizNoMatch, looksLikeBizNo, normalizeBizNo, splitBizNo } from "./biz-no.js";
 
@@ -39,12 +40,12 @@ function itemsOf(payload) {
 function mapNotice(row, extra = {}) {
   const title = row.bidNtceNm || row.ntceNm || extra.title || "";
   const agency = row.dminsttNm || row.ntceInsttNm || extra.agency || "";
-  const base =
-    num(row.bssamt) ||
-    num(row.presmptPrce) ||
-    num(row.asignBdgtAmt) ||
-    num(extra.base) ||
-    null;
+  const amounts = resolveNoticeAmounts({
+    bssamt: row.bssamt ?? extra.bssamt ?? extra.base,
+    labeledBase: extra.labeledBase,
+    presmptPrce: row.presmptPrce ?? extra.presmptPrce ?? extra.estimate,
+    asignBdgtAmt: row.asignBdgtAmt ?? extra.asignBdgtAmt ?? extra.budget,
+  });
   const floorRateRaw = num(row.rsrvtnPrceRngBgnRate) || num(extra.floorRate);
   const method = row.cntrctCnclsMthdNm || row.bidMethdNm || extra.method || "추첨";
   return {
@@ -54,7 +55,11 @@ function mapNotice(row, extra = {}) {
     title,
     agency,
     method,
-    baseAmount: base,
+    baseAmount: amounts.baseAmount,
+    estimateAmount: amounts.estimateAmount,
+    budgetAmount: amounts.budgetAmount,
+    baseSource: amounts.baseSource,
+    baseIsProxy: amounts.baseIsProxy,
     floorRate: floorRateRaw != null ? (floorRateRaw > 1 ? floorRateRaw / 100 : floorRateRaw) : null,
     region: inferRegion(agency, row.prtcptLmtRgnNm || ""),
     kind: inferKind(title),
@@ -69,7 +74,8 @@ async function fetchJson(url) {
   return res.json();
 }
 
-async function fetchBaseAmount(key, bidNtceNo) {
+/** 기초금액 API — bssamt만. 추정가격으로 채우지 않음. */
+async function fetchBaseAmountDetail(key, bidNtceNo) {
   if (!bidNtceNo) return null;
   const q = new URLSearchParams({
     serviceKey: key,
@@ -82,7 +88,12 @@ async function fetchBaseAmount(key, bidNtceNo) {
   try {
     const data = await fetchJson(`${BID_BASE}/getBidPblancListInfoServcBsisAmount?${q}`);
     const item = itemsOf(data)[0];
-    return item ? num(item.bssamt) || num(item.presmptPrce) : null;
+    if (!item) return null;
+    return resolveNoticeAmounts({
+      bssamt: item.bssamt,
+      presmptPrce: item.presmptPrce,
+      asignBdgtAmt: item.asignBdgtAmt,
+    });
   } catch {
     return null;
   }
@@ -197,9 +208,19 @@ async function searchOpenApi(key, query) {
 
   const mapped = [];
   for (const row of uniq.values()) {
-    const m = mapNotice(row);
-    if (!m.baseAmount && m.bidNtceNo) {
-      m.baseAmount = await fetchBaseAmount(key, m.bidNtceNo);
+    let m = mapNotice(row);
+    if ((!m.baseAmount || m.baseIsProxy) && m.bidNtceNo) {
+      const detail = await fetchBaseAmountDetail(key, m.bidNtceNo);
+      if (detail?.baseAmount) {
+        m = {
+          ...m,
+          baseAmount: detail.baseAmount,
+          estimateAmount: detail.estimateAmount ?? m.estimateAmount,
+          budgetAmount: detail.budgetAmount ?? m.budgetAmount,
+          baseSource: detail.baseSource,
+          baseIsProxy: detail.baseIsProxy,
+        };
+      }
     }
     mapped.push(m);
   }
