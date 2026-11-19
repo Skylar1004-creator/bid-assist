@@ -595,6 +595,55 @@ tbody tr:last-child td {
   font-size: 0.78rem;
 }
 
+.trust {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.trust-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e1da;
+  overflow: hidden;
+}
+
+.trust-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3d6b55, #1f4d3a);
+  border-radius: 999px;
+}
+
+.trust-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.verdict-details {
+  margin-top: 16px;
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.verdict-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 6px 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+.verdict-details[open] summary {
+  margin-bottom: 8px;
+}
+
 .critique-box {
   border-radius: 12px;
   padding: 16px 18px;

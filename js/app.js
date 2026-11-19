@@ -289,6 +289,8 @@ function renderVerdict(notice, calc) {
 
   els.verdictBox.className = "verdict-box is-ready";
   const agg = v.aggregation;
+  const ai = v.ai || {};
+  const conf = Math.max(0, Math.min(100, v.confidence || 0));
   const aggRows = (agg?.rows || [])
     .slice(0, 14)
     .map(
@@ -303,67 +305,69 @@ function renderVerdict(notice, calc) {
       </tr>`,
     )
     .join("");
+  const steps = (ai.reasons || [])
+    .map((t) => `<li>${t}</li>`)
+    .join("");
   const ev = v.evidence
+    .filter((e) => !["ai", "ai-step"].includes(e.type))
     .map((e) => `<li><span class="tag">${e.type}</span> ${e.text}</li>`)
-    .join("");
-  const scored = (v.scored || [])
-    .map(
-      (s) =>
-        `<li>${s.id} ${s.name} · ${won(s.bid)} · 기초대비 ${s.vsBaseLabel || "-"} · 점수 ${s.score}</li>`,
-    )
-    .join("");
-  const rejected = (v.rejected || [])
-    .slice(0, 8)
-    .map((r) => `<li><strong>${r.id}</strong> · ${r.reason}</li>`)
     .join("");
 
   const applyPlan = v.anchorPlanId || "D";
   els.verdictBox.innerHTML = `
     <p class="verdict-bid">${won(v.bid)}</p>
-    <p class="verdict-head">${v.headline}</p>
-    <p class="verdict-meta">취합 도출 · 앵커 ${v.anchorPlanId || "-"} · 모드 ${
-      v.mode === "low" ? "선정형" : "적격형"
-    } · 실질하한 ${won(v.hardFloor)}${
-      agg?.vsBaseLabel ? ` · 기초대비 ${agg.vsBaseLabel}` : ""
-    }</p>
-    <h3 class="verdict-sub">취합 · 기초 대비 ±</h3>
-    <div class="table-wrap">
-      <table class="agg-table" aria-label="취합 기초대비">
-        <thead>
-          <tr>
-            <th>출처</th>
-            <th>항목</th>
-            <th class="num">금액</th>
-            <th class="num">기초대비 ±</th>
-            <th class="num">하한대비 ±</th>
-            <th class="num">가중</th>
-          </tr>
-        </thead>
-        <tbody>${aggRows}</tbody>
-      </table>
+    <p class="verdict-head">${v.judgment || v.headline}</p>
+    <div class="trust" aria-label="신뢰도 ${conf}">
+      <div class="trust-bar"><span style="width:${conf}%"></span></div>
+      <span class="trust-label">신뢰 ${conf}</span>
     </div>
-    <h3 class="verdict-sub">객관 근거 (필수)</h3>
-    <ul class="verdict-evidence">${ev}</ul>
-    <h3 class="verdict-sub">후보 점수</h3>
-    <ul class="verdict-scored">${scored}</ul>
-    <h3 class="verdict-sub">탈락·미채택 사유</h3>
-    <ul class="verdict-rejected">${rejected}</ul>
-    <button type="button" class="btn primary" id="applyVerdictBtn">이 금액으로 확정칸 채우기</button>
+    <p class="verdict-meta">${
+      v.mode === "low" ? "선정형(낮을수록 유리)" : "적격형"
+    } · 하한 ${won(v.hardFloor)} · 합의 ${(
+      (ai.agree || 0) * 100
+    ).toFixed(0)}%${
+      ai.tick ? ` · 전략틱 ${won(ai.tick)}` : ""
+    }${agg?.vsBaseLabel ? ` · 기초대비 ${agg.vsBaseLabel}` : ""}</p>
+    <button type="button" class="btn primary" id="applyVerdictBtn">이 금액으로 간다</button>
+    <details class="verdict-details">
+      <summary>판정 과정 · 취합 · 근거</summary>
+      <h3 class="verdict-sub">AI 판단 단계</h3>
+      <ul class="verdict-evidence">${steps || "<li>단계 없음</li>"}</ul>
+      <h3 class="verdict-sub">취합 · 기초 대비 ±</h3>
+      <div class="table-wrap">
+        <table class="agg-table" aria-label="취합 기초대비">
+          <thead>
+            <tr>
+              <th>출처</th>
+              <th>항목</th>
+              <th class="num">금액</th>
+              <th class="num">기초대비 ±</th>
+              <th class="num">하한대비 ±</th>
+              <th class="num">가중</th>
+            </tr>
+          </thead>
+          <tbody>${aggRows}</tbody>
+        </table>
+      </div>
+      <h3 class="verdict-sub">객관 근거</h3>
+      <ul class="verdict-evidence">${ev}</ul>
+    </details>
   `;
 
-  els.verdictBox.querySelector("#applyVerdictBtn")?.addEventListener("click", () => {
+  const applyAi = () => {
     els.decisionSource.value = applyPlan;
     state.selectedPlan = applyPlan;
     els.finalBid.value = String(Math.round(v.bid));
     state.lockFinal = false;
     renderPlans(state.plans);
     renderCritique(readNotice(), state.calc);
-  });
+  };
 
-  if (!state.lockFinal && els.decisionSource.value !== "custom") {
-    els.decisionSource.value = applyPlan;
-    state.selectedPlan = applyPlan;
-    els.finalBid.value = String(Math.round(v.bid));
+  els.verdictBox.querySelector("#applyVerdictBtn")?.addEventListener("click", applyAi);
+
+  // AI 판정을 기본으로 확정칸에 넣음 (직접입력 잠금 아니면)
+  if (!state.lockFinal) {
+    applyAi();
   }
 }
 

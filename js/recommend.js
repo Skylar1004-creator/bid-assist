@@ -6,6 +6,7 @@
 
 import { bidFromBase, baseSourceLabel } from "./base-amount.js";
 import { aggregateToBid } from "./aggregate.js";
+import { aiFinalize } from "./judgment.js";
 
 function pct(n) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -365,45 +366,85 @@ export function buildVerdict(notice, calc, opts = {}) {
     };
   }
 
-  let finalBid = Math.round(agg.derived);
-  if (hardFloor > 0 && finalBid < hardFloor) finalBid = Math.ceil(hardFloor);
+  const planBids = candidates.map((c) => Math.round(c.bid));
+  const histBids = (agg.rows || [])
+    .filter((r) => r.source === "history")
+    .map((r) => r.bid);
+  const floorHugBid =
+    (calc.plans || []).find((p) => p.id === "D" && !p.disabled)?.bid ?? hardFloor;
 
-  const confidence = Math.max(
-    15,
-    Math.min(
-      97,
-      best.score +
-        (calc.usedPlanned ? 3 : -8) +
-        (sameExact.length ? 5 : 0) +
-        Math.min(8, Math.floor((agg.rows?.length || 0) / 2)),
-    ),
-  );
+  const ai = aiFinalize({
+    base,
+    ref,
+    yega,
+    hardFloor,
+    mode,
+    minOk,
+    competitionShare: calc.year?.share || calc.stats?.yearShare || 0.3,
+    planBids,
+    histBids,
+    anchorBid: best.bid,
+    floorHugBid,
+    usedPlanned: calc.usedPlanned,
+    sameExactN: sameExact.length,
+  });
+
+  if (!ai.ok || !(ai.bid > 0)) {
+    return {
+      status: "blocked",
+      bid: null,
+      rate: null,
+      planId: null,
+      confidence: 0,
+      headline: "AI 판정을 내리지 않았습니다.",
+      evidence: [
+        { type: "block", text: ai.reason || "판정 실패" },
+        ...(ai.reasons || []).map((t) => ({ type: "ai", text: t })),
+        baseCite,
+      ],
+      rejected,
+      method: null,
+      hardFloor,
+      aggregation: agg,
+      ai,
+    };
+  }
+
+  const finalBid = Math.round(ai.bid);
+  const confidence = ai.confidence;
 
   const whyNotOthers = candidates.slice(1, 4).map((c) => ({
     id: c.id,
     bid: Math.round(c.bid),
     score: c.score,
-    reason: `${c.name} 점수 ${c.score} · 취합 대비 ${won(Math.round(c.bid) - finalBid)}`,
+    reason: `${c.name} · AI판정 대비 ${won(Math.round(c.bid) - finalBid)}`,
   }));
-
   for (const r of rejected) {
     whyNotOthers.push({ id: r.id, bid: null, score: 0, reason: r.reason });
   }
 
   const aggEvidence = [
+    { type: "ai", text: ai.judgment },
+    ...(ai.reasons || []).map((t) => ({ type: "ai-step", text: t })),
     {
       type: "aggregate",
       text: agg.summary,
     },
     {
       type: "vs-base",
-      text: `기초 ${won(base)} 대비 도출 ${agg.vsBaseLabel}${
-        agg.vsFloorLabel ? ` · 하한 대비 ${agg.vsFloorLabel}` : ""
+      text: `기초 ${won(base)} 대비 ${
+        ai.vsBasePct == null
+          ? "—"
+          : `${ai.vsBasePct >= 0 ? "+" : ""}${(ai.vsBasePct * 100).toFixed(3)}%`
+      }${
+        ai.vsFloorWon != null
+          ? ` · 하한 대비 ${ai.vsFloorWon >= 0 ? "+" : ""}${Math.round(ai.vsFloorWon).toLocaleString("ko-KR")}원`
+          : ""
       }`,
     },
     {
       type: "band",
-      text: `취합 구간 ${agg.bandLabel}`,
+      text: `취합 구간 ${agg.bandLabel} · 합의율 ${(ai.agree * 100).toFixed(0)}%`,
     },
     ...agg.rows
       .filter((r) => r.source === "plan")
@@ -419,17 +460,19 @@ export function buildVerdict(notice, calc, opts = {}) {
     status: "ready",
     bid: finalBid,
     rate: ref > 0 ? finalBid / ref : best.rate,
-    planId: "Σ",
-    name: "취합·기초대비 도출",
+    planId: "AI",
+    name: "AI 판정",
     anchorPlanId: best.id,
     confidence,
-    headline: `추천 투찰가 ${won(finalBid)} · 기초대비 ${agg.vsBaseLabel} · 신뢰 ${confidence}`,
+    judgment: ai.judgment,
+    headline: `AI 투찰가 ${won(finalBid)} · 신뢰 ${confidence}`,
     evidence: [baseCite, ...aggEvidence, ...best.evidence.filter((e) => e.type !== "base")],
     rejected: whyNotOthers,
-    method: "Σ",
+    method: "AI",
     hardFloor,
     mode,
     aggregation: agg,
+    ai,
     scored: candidates.map((c) => ({
       id: c.id,
       name: c.name,
