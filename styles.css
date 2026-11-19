@@ -485,6 +485,80 @@ tbody tr:last-child td {
   line-height: 1.45;
 }
 
+.verdict-box {
+  border-radius: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  background: #f7f5f1;
+}
+
+.verdict-box.is-ready {
+  border-color: #9bb8a8;
+  background: #f1f6f3;
+}
+
+.verdict-box.is-blocked {
+  border-color: #e0a8a8;
+  background: var(--danger-bg);
+}
+
+.verdict-bid {
+  margin: 0 0 6px;
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.verdict-head {
+  margin: 0 0 8px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.verdict-meta {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.verdict-sub {
+  margin: 14px 0 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.verdict-evidence,
+.verdict-scored,
+.verdict-rejected {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 6px;
+}
+
+.verdict-evidence li,
+.verdict-scored li,
+.verdict-rejected li {
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.verdict-evidence .tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e4ebe6;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.verdict-box .btn {
+  margin-top: 14px;
+}
+
 .critique-box {
   border-radius: 12px;
   padding: 16px 18px;

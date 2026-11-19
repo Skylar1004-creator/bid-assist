@@ -1,0 +1,309 @@
+/**
+ * 입찰 신 판정 — 사용자 취향이 아니라 객관 근거로 투찰가 1개를 넘긴다.
+ * 근거 없으면 추천하지 않는다(blocked).
+ */
+
+function pct(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${(n * 100).toFixed(3)}%`;
+}
+
+function won(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${Math.round(n).toLocaleString("ko-KR")}원`;
+}
+
+function methodMode(method = "") {
+  const m = String(method || "");
+  if (/추첨|최저|수의/.test(m)) return "low"; // 낮을수록 유리
+  if (/적격/.test(m)) return "qualify";
+  return "low";
+}
+
+function caseCite(c) {
+  if (!c) return null;
+  return {
+    title: c.title,
+    agency: c.agency,
+    awardedAt: c.awardedAt,
+    rate: c.rate,
+    award: c.award,
+    base: c.base,
+    planned: c.planned,
+    refNo: c.refNo || null,
+  };
+}
+
+/**
+ * @param {object} notice
+ * @param {object} calc calcPlans 결과
+ * @param {{ cost?: number, minMarginPct?: number }} opts
+ */
+export function buildVerdict(notice, calc, opts = {}) {
+  const cost = opts.cost || 0;
+  const minOk = cost > 0 ? cost * (1 + (opts.minMarginPct || 0) / 100) : 0;
+  const ref = calc.refAmount || notice.baseAmount || 0;
+  const floorSimple = calc.floor || 0;
+  const floorRate = notice.floorRate || 0;
+  const mode = methodMode(notice.method);
+  const evidence = [];
+  const rejected = [];
+  const candidates = [];
+
+  const hardFloor = (() => {
+    // D안(예가×하한)이 있으면 그것이 실질 하한에 가깝다
+    const d = (calc.plans || []).find((p) => p.id === "D" && !p.disabled && p.bid != null);
+    if (d) return d.bid;
+    if (ref > 0 && floorRate > 0) return ref * floorRate;
+    return floorSimple;
+  })();
+
+  function pushCandidate(row) {
+    if (row.bid == null || !(row.bid > 0)) {
+      rejected.push({ id: row.id, reason: "산출 금액 없음" });
+      return;
+    }
+    if (hardFloor > 0 && row.bid + 0.5 < hardFloor) {
+      rejected.push({
+        id: row.id,
+        reason: `금액 ${won(row.bid)} < 실질하한 ${won(hardFloor)} → 무효`,
+      });
+      return;
+    }
+    if (minOk > 0 && row.bid < minOk) {
+      rejected.push({
+        id: row.id,
+        reason: `금액 ${won(row.bid)} < 원가수용선 ${won(minOk)} → 적자`,
+      });
+      return;
+    }
+    if (!row.evidence?.length) {
+      rejected.push({ id: row.id, reason: "객관 근거 목록이 비어 추천 불가" });
+      return;
+    }
+    candidates.push(row);
+  }
+
+  // —— C: 동일 공고 (가장 강한 근거) ——
+  const sameExact =
+    calc.stats?.sameScope === "동일·재공고" ? calc.sameAwarded || [] : [];
+  if (sameExact.length >= 1 && ref > 0) {
+    const rates = sameExact.map((c) => c.rate).filter((r) => r != null);
+    const rate =
+      rates.length === 1
+        ? rates[0]
+        : rates.slice().sort((a, b) => a - b)[Math.floor((rates.length - 1) / 2)];
+    pushCandidate({
+      id: "C",
+      name: "동일·재공고 실적",
+      bid: ref * rate,
+      rate,
+      baseWeight: 92,
+      evidence: [
+        {
+          type: "same-notice",
+          text: `동일·재공고 낙찰 ${sameExact.length}건 · 적용 투찰률 ${pct(rate)}`,
+        },
+        ...sameExact.slice(0, 5).map((c) => ({
+          type: "case",
+          text: `${c.awardedAt || "-"} · ${c.title} · ${pct(c.rate)} · ${won(c.award)}`,
+          case: caseCite(c),
+        })),
+      ],
+    });
+  } else if ((calc.sameAwarded || []).length) {
+    rejected.push({
+      id: "C",
+      reason: `유사 공고만 ${calc.sameAwarded.length}건 — 동일 공고로 단정 불가`,
+    });
+  } else {
+    rejected.push({ id: "C", reason: "동일·재공고 낙찰 없음" });
+  }
+
+  // —— B: 1년 최빈(고확률) — 선정에 유리한 ‘자주 나온’ 구간 ——
+  const year = calc.year || {};
+  if (year.midRate != null && year.band && (year.yearCases || []).length >= 3 && ref > 0) {
+    const share = year.share || 0;
+    pushCandidate({
+      id: "B",
+      name: "1년 최빈 투찰률",
+      bid: ref * year.midRate,
+      rate: year.midRate,
+      baseWeight: 55 + Math.min(25, Math.round(share * 40)) + Math.min(10, year.yearCases.length),
+      evidence: [
+        {
+          type: "frequency",
+          text: `${year.scope || "1년"} ${year.yearCases.length}건 중 최빈 구간 ${pct(
+            year.band[0],
+          )}~${pct(year.band[1])} (점유 ${((share || 0) * 100).toFixed(0)}%)`,
+        },
+        ...year.yearCases.slice(0, 5).map((c) => ({
+          type: "case",
+          text: `${c.awardedAt || "-"} · ${c.title} · ${pct(c.rate)}`,
+          case: caseCite(c),
+        })),
+      ],
+    });
+  } else {
+    rejected.push({
+      id: "B",
+      reason:
+        (year.yearCases || []).length < 3
+          ? `1년 표본 ${(year.yearCases || []).length}건 < 3건`
+          : "최빈 구간 산출 실패",
+    });
+  }
+
+  // —— A: 종류 통계 — 선정용은 P25(낮은 쪽), 여유 있으면 P50 ——
+  const kindN = calc.stats?.kindN || 0;
+  const rates = (calc.kindCases || []).map((c) => c.rate).filter((r) => r != null).sort((a, b) => a - b);
+  if (kindN >= 3 && rates.length && ref > 0) {
+    const p25 = rates[Math.floor((rates.length - 1) * 0.25)];
+    const p50 = rates[Math.floor((rates.length - 1) * 0.5)];
+    const pickRate = mode === "low" ? p25 : p50;
+    pushCandidate({
+      id: "A",
+      name: mode === "low" ? "동일종류 하위25%(선정형)" : "동일종류 중앙값",
+      bid: ref * pickRate,
+      rate: pickRate,
+      baseWeight: 45 + Math.min(20, kindN),
+      evidence: [
+        {
+          type: "quantile",
+          text: `${calc.stats.kindScope} ${kindN}건 · ${
+            mode === "low" ? "P25" : "P50"
+          } 투찰률 ${pct(pickRate)} (P50=${pct(p50)})`,
+        },
+        ...calc.kindCases.slice(0, 5).map((c) => ({
+          type: "case",
+          text: `${c.awardedAt || "-"} · ${c.region || ""} · ${pct(c.rate)} · ${won(c.award)}`,
+          case: caseCite(c),
+        })),
+      ],
+    });
+  } else {
+    rejected.push({
+      id: "A",
+      reason: kindN < 3 ? `종류 표본 ${kindN}건 < 3건` : "투찰률 분포 없음",
+    });
+  }
+
+  // —— D: 예가×하한 밀착 (무효 회피 + 최저가형 핵심) ——
+  const planD = (calc.plans || []).find((p) => p.id === "D");
+  if (planD && !planD.disabled && planD.bid != null) {
+    const yegaKnown = calc.yegaFromNotice != null;
+    pushCandidate({
+      id: "D",
+      name: "하한밀착(예가×하한·A/순공사)",
+      bid: planD.bid,
+      rate: ref > 0 ? planD.bid / ref : null,
+      baseWeight: yegaKnown ? 78 : calc.stats?.yegaN >= 5 ? 58 : 28,
+      evidence: [
+        {
+          type: "formula",
+          text: planD.why,
+        },
+        {
+          type: "formula-meta",
+          text: `예가사정율 ${pct(calc.yegaRate)} · 하한율 ${pct(floorRate)}${
+            calc.aValue > 0 ? ` · A값 ${won(calc.aValue)}` : ""
+          }${calc.netCost > 0 ? ` · 순공사 ${won(calc.netCost)}` : ""}`,
+        },
+        ...(calc.formula?.rows || []).map((r) => ({
+          type: "formula-row",
+          text: `${r.name}: ${won(r.bid)}`,
+        })),
+      ],
+    });
+  } else {
+    rejected.push({ id: "D", reason: "예가사정율·하한율 부족으로 하한밀착 산식 불가" });
+  }
+
+  if (!candidates.length) {
+    return {
+      status: "blocked",
+      bid: null,
+      rate: null,
+      planId: null,
+      confidence: 0,
+      headline: "객관 근거가 부족해 투찰가를 넘기지 않습니다.",
+      evidence: [
+        {
+          type: "block",
+          text: "동일공고·종류표본(≥3)·1년최빈(≥3)·예가×하한 산식 중 유효 근거가 없습니다.",
+        },
+      ],
+      rejected,
+      method: null,
+      hardFloor,
+    };
+  }
+
+  // —— 점수: 근거 가중치 + 선정 적합성(과도한 고가 감점) ——
+  for (const c of candidates) {
+    let score = c.baseWeight;
+    // 근거 조항 수
+    score += Math.min(12, c.evidence.length * 2);
+    // 하한 대비 여유(너무 높으면 선정 실패 원인)
+    if (hardFloor > 0 && ref > 0) {
+      const above = (c.bid - hardFloor) / ref;
+      if (mode === "low") {
+        if (above <= 0.003) score += 18;
+        else if (above <= 0.01) score += 10;
+        else if (above <= 0.02) score += 4;
+        else if (above >= 0.05) score -= 25;
+        else if (above >= 0.03) score -= 12;
+      } else {
+        if (above >= 0.01 && above <= 0.04) score += 8;
+      }
+    }
+    // 예정가 확정 가산
+    if (calc.usedPlanned) score += 6;
+    c.score = Math.round(score);
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+
+  // 최종 금액: 원 단위 반올림, 하한 미만이면 하한으로 끌어올림
+  let finalBid = Math.round(best.bid);
+  if (hardFloor > 0 && finalBid < hardFloor) finalBid = Math.ceil(hardFloor);
+
+  const confidence = Math.max(
+    15,
+    Math.min(97, best.score + (calc.usedPlanned ? 3 : -8) + (sameExact.length ? 5 : 0)),
+  );
+
+  const whyNotOthers = candidates.slice(1, 4).map((c) => ({
+    id: c.id,
+    bid: Math.round(c.bid),
+    score: c.score,
+    reason: `${c.name} 점수 ${c.score} < 채택 ${best.score}`,
+  }));
+
+  for (const r of rejected) {
+    whyNotOthers.push({ id: r.id, bid: null, score: 0, reason: r.reason });
+  }
+
+  return {
+    status: "ready",
+    bid: finalBid,
+    rate: ref > 0 ? finalBid / ref : best.rate,
+    planId: best.id,
+    name: best.name,
+    confidence,
+    headline: `추천 투찰가 ${won(finalBid)} · 근거 ${best.id} · 신뢰 ${confidence}`,
+    evidence: best.evidence,
+    rejected: whyNotOthers,
+    method: best.id,
+    hardFloor,
+    mode,
+    scored: candidates.map((c) => ({
+      id: c.id,
+      name: c.name,
+      bid: Math.round(c.bid),
+      score: c.score,
+      rate: c.rate,
+    })),
+  };
+}

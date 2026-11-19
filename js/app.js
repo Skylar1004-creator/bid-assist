@@ -7,6 +7,7 @@ import {
 } from "./calc.js";
 import { bizNoMatch, looksLikeBizNo, normalizeBizNo } from "./biz-no.js";
 import { critiqueCalc, critiqueLevelLabel } from "./critique.js";
+import { buildVerdict } from "./recommend.js";
 
 const won = (n) =>
   new Intl.NumberFormat("ko-KR", {
@@ -45,6 +46,7 @@ const els = {
   historyBody: document.getElementById("historyBody"),
   historyTabs: document.getElementById("historyTabs"),
   planGrid: document.getElementById("planGrid"),
+  verdictBox: document.getElementById("verdictBox"),
   critiqueBox: document.getElementById("critiqueBox"),
   critiqueHint: document.getElementById("critiqueHint"),
   decisionSource: document.getElementById("decisionSource"),
@@ -63,6 +65,8 @@ const state = {
   historyTab: "kind",
   calc: null,
   plans: [],
+  verdict: null,
+  lockFinal: false,
   autoInfer: true,
   draftKey: "bid-assist-notice-draft",
   lookupTimer: null,
@@ -235,6 +239,72 @@ function renderHistory(calc, notice) {
       </tr>`;
     })
     .join("");
+}
+
+function renderVerdict(notice, calc) {
+  if (!els.verdictBox) return;
+  const inputs = readInputs();
+  const v = buildVerdict(notice, calc, {
+    cost: inputs.cost,
+    minMarginPct: inputs.minMargin,
+  });
+  state.verdict = v;
+
+  if (v.status === "blocked") {
+    els.verdictBox.className = "verdict-box is-blocked";
+    els.verdictBox.innerHTML = `
+      <p class="verdict-bid">추천 없음</p>
+      <p class="verdict-head">${v.headline}</p>
+      <ul class="verdict-evidence">${v.evidence.map((e) => `<li>${e.text}</li>`).join("")}</ul>
+      <ul class="verdict-rejected">${(v.rejected || [])
+        .map((r) => `<li><strong>${r.id}</strong> · ${r.reason}</li>`)
+        .join("")}</ul>
+    `;
+    return;
+  }
+
+  els.verdictBox.className = "verdict-box is-ready";
+  const ev = v.evidence
+    .map((e) => `<li><span class="tag">${e.type}</span> ${e.text}</li>`)
+    .join("");
+  const scored = (v.scored || [])
+    .map((s) => `<li>${s.id} ${s.name} · ${won(s.bid)} · 점수 ${s.score}</li>`)
+    .join("");
+  const rejected = (v.rejected || [])
+    .slice(0, 8)
+    .map((r) => `<li><strong>${r.id}</strong> · ${r.reason}</li>`)
+    .join("");
+
+  els.verdictBox.innerHTML = `
+    <p class="verdict-bid">${won(v.bid)}</p>
+    <p class="verdict-head">${v.headline}</p>
+    <p class="verdict-meta">채택 근거 ${v.planId} · ${v.name} · 모드 ${
+      v.mode === "low" ? "선정형(낮을수록 유리)" : "적격형"
+    } · 실질하한 ${won(v.hardFloor)}</p>
+    <h3 class="verdict-sub">객관 근거 (필수)</h3>
+    <ul class="verdict-evidence">${ev}</ul>
+    <h3 class="verdict-sub">후보 점수</h3>
+    <ul class="verdict-scored">${scored}</ul>
+    <h3 class="verdict-sub">탈락·미채택 사유</h3>
+    <ul class="verdict-rejected">${rejected}</ul>
+    <button type="button" class="btn primary" id="applyVerdictBtn">이 금액으로 확정칸 채우기</button>
+  `;
+
+  els.verdictBox.querySelector("#applyVerdictBtn")?.addEventListener("click", () => {
+    els.decisionSource.value = v.planId || "custom";
+    state.selectedPlan = v.planId || state.selectedPlan;
+    els.finalBid.value = String(Math.round(v.bid));
+    state.lockFinal = false;
+    renderPlans(state.plans);
+    renderCritique(readNotice(), state.calc);
+  });
+
+  // 자동으로 확정칸에 신 판정 반영 (직접입력 잠금이 아니면)
+  if (!state.lockFinal && els.decisionSource.value !== "custom") {
+    els.decisionSource.value = v.planId;
+    state.selectedPlan = v.planId;
+    els.finalBid.value = String(Math.round(v.bid));
+  }
 }
 
 function renderCritique(notice, calc) {
@@ -411,8 +481,16 @@ function refresh() {
 
   renderNoticeLive(notice, calc);
   renderHistory(calc, notice);
+  renderVerdict(notice, calc);
   renderPlans(calc.plans);
-  if (els.decisionSource.value !== "custom") syncFinalFromSource();
+  // 신 판정이 ready면 확정칸은 renderVerdict가 채움. blocked·직접입력이면 보조안 동기화.
+  if (
+    state.verdict?.status !== "ready" &&
+    els.decisionSource.value !== "custom" &&
+    !state.lockFinal
+  ) {
+    syncFinalFromSource();
+  }
   renderCritique(notice, calc);
 
   const n = state.history.length;
@@ -676,9 +754,12 @@ function bind() {
   });
 
   els.finalBid.addEventListener("input", () => {
+    state.lockFinal = true;
+    els.decisionSource.value = "custom";
     if (state.calc) renderCritique(readNotice(), state.calc);
   });
   els.finalBid.addEventListener("change", () => {
+    state.lockFinal = true;
     if (state.calc) renderCritique(readNotice(), state.calc);
   });
 

@@ -63,7 +63,11 @@ for (const kind of ["청소", "안전진단", "기타"]) {
   if (kind === "청소" || kind === "안전진단") {
     assert(resolved === kind, `${kind}으로 resolve`);
     assert(all.every((c) => kindFamily(c.kind) === kindFamily(kind)), `${kind}만`);
-    assert(calc.plans.every((p) => p.disabled), `${kind} 이력 없으면 3안 모두 비활성`);
+    // A/B/C는 표본 필수. D(예가×하한)는 공고 수치만으로 가능 — 이력 누수와 무관.
+    assert(
+      calc.plans.filter((p) => p.id !== "D").every((p) => p.disabled),
+      `${kind} 이력 없으면 A/B/C 비활성`,
+    );
   }
 }
 

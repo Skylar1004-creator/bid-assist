@@ -223,10 +223,18 @@
           </div>
         </section>
 
+        <section class="panel verdict" aria-labelledby="verdictTitle">
+          <div class="panel-head">
+            <h2 id="verdictTitle">신 판정 · 투찰가</h2>
+            <p class="hint">내 감이 아니라 객관 근거로 1개를 넘깁니다. 근거 없으면 추천하지 않습니다.</p>
+          </div>
+          <div id="verdictBox" class="verdict-box" role="status" aria-live="polite"></div>
+        </section>
+
         <section class="panel plans" aria-labelledby="plansTitle">
           <div class="panel-head">
-            <h2 id="plansTitle">산정 기준 3안</h2>
-            <p class="hint">참고가입니다. 아래 전문가 이의제기를 읽고 최종을 고르세요.</p>
+            <h2 id="plansTitle">보조 안 (대조용)</h2>
+            <p class="hint">신 판정이 메인입니다. 아래는 근거 비교용입니다.</p>
           </div>
           <div class="plan-grid" id="planGrid" role="radiogroup" aria-label="산정안 선택"></div>
         </section>
@@ -248,10 +256,10 @@
             <label class="field">
               <span>선택</span>
               <select id="decisionSource" aria-label="최종 선택 출처">
-                <option value="A">A · 동일종류 투찰률</option>
-                <option value="B">B · 1년 투찰률 고확률</option>
-                <option value="C">C · 동일·유사 공고</option>
-                <option value="D">D · 하한밀착(예가×하한·A값)</option>
+                <option value="A">A · 동일종류(신 후보)</option>
+                <option value="B">B · 1년 최빈(신 후보)</option>
+                <option value="C">C · 동일·재공고(신 후보)</option>
+                <option value="D">D · 하한밀착(신 후보)</option>
                 <option value="custom">직접 입력</option>
               </select>
             </label>
