@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: bid-assist
+    runtime: node
+    plan: free
+    buildCommand: "echo ready"
+    startCommand: "node server.mjs"
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
