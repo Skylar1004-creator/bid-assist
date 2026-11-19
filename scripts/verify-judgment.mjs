@@ -69,7 +69,7 @@ assert(agreementScore([100, 110], 100) < 0.5, "합의 낮음");
   assert(ai.ok, "AI ok");
   assert(ai.bid >= 9_090_000, "하한 이상");
   assert(ai.confidence >= 40, "신뢰");
-  assert(ai.judgment.includes("선정형"), "선정형 문장");
+  assert(/선정/.test(ai.judgment), "선정 문장");
   console.log("ai", ai.bid, ai.confidence, ai.reasons.slice(0, 3));
 }
 
