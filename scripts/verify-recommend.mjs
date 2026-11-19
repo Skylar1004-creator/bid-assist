@@ -51,8 +51,11 @@ const asOf = new Date("2026-11-19");
   assert(v.evidence?.length >= 1, "객관 근거 필수");
   assert(v.evidence.every((e) => e.text), "근거 문구 전부 존재");
   assert(v.hardFloor > 0 && v.bid + 0.5 >= v.hardFloor, "실질하한 이상");
-  assert(["A", "B", "C", "D"].includes(v.planId), "채택 후보 id");
-  console.log("verdict", v.planId, v.bid, v.confidence, v.headline);
+  assert(v.planId === "Σ" || ["A", "B", "C", "D"].includes(v.planId), "취합 또는 후보 id");
+  assert(v.aggregation?.ok, "취합 성공");
+  assert(v.aggregation.vsBaseLabel, "기초 대비 ± 라벨");
+  assert(v.evidence.some((e) => e.type === "aggregate" || e.type === "vs-base"), "취합 근거");
+  console.log("verdict", v.planId, v.bid, v.confidence, v.headline, v.aggregation?.vsBaseLabel);
 }
 
 // 3) 원가수용선이 과도하면 해당 후보 탈락 또는 blocked

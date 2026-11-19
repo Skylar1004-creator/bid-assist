@@ -569,6 +569,32 @@ tbody tr:last-child td {
   margin-top: 14px;
 }
 
+.agg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.agg-table th,
+.agg-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.agg-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agg-table th {
+  font-weight: 700;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .critique-box {
   border-radius: 12px;
   padding: 16px 18px;

@@ -5,6 +5,7 @@
  */
 
 import { bidFromBase, baseSourceLabel } from "./base-amount.js";
+import { aggregateToBid } from "./aggregate.js";
 
 function pct(n) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -328,45 +329,114 @@ export function buildVerdict(notice, calc, opts = {}) {
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
 
-  // 최종 금액: 원 단위 반올림, 하한 미만이면 하한으로 끌어올림
-  let finalBid = Math.round(best.bid);
+  // —— 취합: 후보+이력 재계산 → 기초 대비 ± → 값 1개 ——
+  const agg = aggregateToBid({
+    base,
+    yega,
+    hardFloor,
+    mode,
+    candidates: candidates.map((c) => ({
+      id: c.id,
+      name: c.name,
+      bid: c.bid,
+      score: c.score,
+      rate: c.rate,
+    })),
+    kindCases: calc.kindCases || [],
+    yearCases: calc.year?.yearCases || [],
+  });
+
+  if (!agg.ok || !(agg.derived > 0)) {
+    return {
+      status: "blocked",
+      bid: null,
+      rate: null,
+      planId: null,
+      confidence: 0,
+      headline: "취합·기초 대비 도출에 실패했습니다.",
+      evidence: [
+        { type: "block", text: agg.reason || "취합 표본 없음" },
+        baseCite,
+      ],
+      rejected,
+      method: null,
+      hardFloor,
+      aggregation: agg,
+    };
+  }
+
+  let finalBid = Math.round(agg.derived);
   if (hardFloor > 0 && finalBid < hardFloor) finalBid = Math.ceil(hardFloor);
 
   const confidence = Math.max(
     15,
-    Math.min(97, best.score + (calc.usedPlanned ? 3 : -8) + (sameExact.length ? 5 : 0)),
+    Math.min(
+      97,
+      best.score +
+        (calc.usedPlanned ? 3 : -8) +
+        (sameExact.length ? 5 : 0) +
+        Math.min(8, Math.floor((agg.rows?.length || 0) / 2)),
+    ),
   );
 
   const whyNotOthers = candidates.slice(1, 4).map((c) => ({
     id: c.id,
     bid: Math.round(c.bid),
     score: c.score,
-    reason: `${c.name} 점수 ${c.score} < 채택 ${best.score}`,
+    reason: `${c.name} 점수 ${c.score} · 취합 대비 ${won(Math.round(c.bid) - finalBid)}`,
   }));
 
   for (const r of rejected) {
     whyNotOthers.push({ id: r.id, bid: null, score: 0, reason: r.reason });
   }
 
+  const aggEvidence = [
+    {
+      type: "aggregate",
+      text: agg.summary,
+    },
+    {
+      type: "vs-base",
+      text: `기초 ${won(base)} 대비 도출 ${agg.vsBaseLabel}${
+        agg.vsFloorLabel ? ` · 하한 대비 ${agg.vsFloorLabel}` : ""
+      }`,
+    },
+    {
+      type: "band",
+      text: `취합 구간 ${agg.bandLabel}`,
+    },
+    ...agg.rows
+      .filter((r) => r.source === "plan")
+      .map((r) => ({
+        type: "agg-row",
+        text: `${r.id} ${r.name} · ${won(r.bid)} · 기초대비 ${r.vsBaseLabel}${
+          r.vsFloorLabel ? ` · 하한대비 ${r.vsFloorLabel}` : ""
+        }`,
+      })),
+  ];
+
   return {
     status: "ready",
     bid: finalBid,
     rate: ref > 0 ? finalBid / ref : best.rate,
-    planId: best.id,
-    name: best.name,
+    planId: "Σ",
+    name: "취합·기초대비 도출",
+    anchorPlanId: best.id,
     confidence,
-    headline: `추천 투찰가 ${won(finalBid)} · 근거 ${best.id} · 신뢰 ${confidence}`,
-    evidence: best.evidence,
+    headline: `추천 투찰가 ${won(finalBid)} · 기초대비 ${agg.vsBaseLabel} · 신뢰 ${confidence}`,
+    evidence: [baseCite, ...aggEvidence, ...best.evidence.filter((e) => e.type !== "base")],
     rejected: whyNotOthers,
-    method: best.id,
+    method: "Σ",
     hardFloor,
     mode,
+    aggregation: agg,
     scored: candidates.map((c) => ({
       id: c.id,
       name: c.name,
       bid: Math.round(c.bid),
       score: c.score,
       rate: c.rate,
+      vsBaseLabel: `${c.bid - base >= 0 ? "+" : ""}${Math.round(c.bid - base).toLocaleString("ko-KR")}원`,
     })),
   };
 }

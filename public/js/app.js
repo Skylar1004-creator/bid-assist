@@ -288,23 +288,60 @@ function renderVerdict(notice, calc) {
   }
 
   els.verdictBox.className = "verdict-box is-ready";
+  const agg = v.aggregation;
+  const aggRows = (agg?.rows || [])
+    .slice(0, 14)
+    .map(
+      (r) => `
+      <tr>
+        <td>${r.id}</td>
+        <td>${r.name}</td>
+        <td class="num">${won(r.bid)}</td>
+        <td class="num">${r.vsBaseLabel || "-"}</td>
+        <td class="num">${r.vsFloorLabel || "-"}</td>
+        <td class="num">${r.weight}</td>
+      </tr>`,
+    )
+    .join("");
   const ev = v.evidence
     .map((e) => `<li><span class="tag">${e.type}</span> ${e.text}</li>`)
     .join("");
   const scored = (v.scored || [])
-    .map((s) => `<li>${s.id} ${s.name} · ${won(s.bid)} · 점수 ${s.score}</li>`)
+    .map(
+      (s) =>
+        `<li>${s.id} ${s.name} · ${won(s.bid)} · 기초대비 ${s.vsBaseLabel || "-"} · 점수 ${s.score}</li>`,
+    )
     .join("");
   const rejected = (v.rejected || [])
     .slice(0, 8)
     .map((r) => `<li><strong>${r.id}</strong> · ${r.reason}</li>`)
     .join("");
 
+  const applyPlan = v.anchorPlanId || "D";
   els.verdictBox.innerHTML = `
     <p class="verdict-bid">${won(v.bid)}</p>
     <p class="verdict-head">${v.headline}</p>
-    <p class="verdict-meta">채택 근거 ${v.planId} · ${v.name} · 모드 ${
-      v.mode === "low" ? "선정형(낮을수록 유리)" : "적격형"
-    } · 실질하한 ${won(v.hardFloor)}</p>
+    <p class="verdict-meta">취합 도출 · 앵커 ${v.anchorPlanId || "-"} · 모드 ${
+      v.mode === "low" ? "선정형" : "적격형"
+    } · 실질하한 ${won(v.hardFloor)}${
+      agg?.vsBaseLabel ? ` · 기초대비 ${agg.vsBaseLabel}` : ""
+    }</p>
+    <h3 class="verdict-sub">취합 · 기초 대비 ±</h3>
+    <div class="table-wrap">
+      <table class="agg-table" aria-label="취합 기초대비">
+        <thead>
+          <tr>
+            <th>출처</th>
+            <th>항목</th>
+            <th class="num">금액</th>
+            <th class="num">기초대비 ±</th>
+            <th class="num">하한대비 ±</th>
+            <th class="num">가중</th>
+          </tr>
+        </thead>
+        <tbody>${aggRows}</tbody>
+      </table>
+    </div>
     <h3 class="verdict-sub">객관 근거 (필수)</h3>
     <ul class="verdict-evidence">${ev}</ul>
     <h3 class="verdict-sub">후보 점수</h3>
@@ -315,18 +352,17 @@ function renderVerdict(notice, calc) {
   `;
 
   els.verdictBox.querySelector("#applyVerdictBtn")?.addEventListener("click", () => {
-    els.decisionSource.value = v.planId || "custom";
-    state.selectedPlan = v.planId || state.selectedPlan;
+    els.decisionSource.value = applyPlan;
+    state.selectedPlan = applyPlan;
     els.finalBid.value = String(Math.round(v.bid));
     state.lockFinal = false;
     renderPlans(state.plans);
     renderCritique(readNotice(), state.calc);
   });
 
-  // 자동으로 확정칸에 신 판정 반영 (직접입력 잠금이 아니면)
   if (!state.lockFinal && els.decisionSource.value !== "custom") {
-    els.decisionSource.value = v.planId;
-    state.selectedPlan = v.planId;
+    els.decisionSource.value = applyPlan;
+    state.selectedPlan = applyPlan;
     els.finalBid.value = String(Math.round(v.bid));
   }
 }

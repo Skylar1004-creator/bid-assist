@@ -100,11 +100,18 @@ const asOf = new Date("2026-11-19");
   assert(v.status === "ready", "진짜 기초 → ready");
   assert(v.evidence.some((e) => e.type === "base"), "근거에 기초금액");
   const yega = 13_909_925 / 13_684_000;
-  const expectD = Math.round(13_684_000 * yega * 0.9);
-  if (v.planId === "D") {
-    assert(Math.abs(v.bid - expectD) <= 1, "D = 기초×예가×하한");
-  }
-  console.log("verdict", v.planId, v.bid, "expectD", expectD);
+  const expectFloor = Math.round(13_684_000 * yega * 0.9);
+  assert(v.bid + 0.5 >= expectFloor, "도출가 ≥ 기초×예가×하한");
+  assert(v.aggregation?.ok, "취합 ok");
+  assert(typeof v.aggregation.vsBaseWon === "number", "기초 대비 ±원");
+  console.log(
+    "verdict",
+    v.planId,
+    v.bid,
+    "floor",
+    expectFloor,
+    v.aggregation.vsBaseLabel,
+  );
 }
 
 if (process.exitCode) {
