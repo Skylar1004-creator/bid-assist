@@ -75,17 +75,71 @@
               <input id="floorRateInput" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="87.85" />
             </label>
             <label class="field">
+              <span>예상 예가사정율 (%) · 개찰 전</span>
+              <input
+                id="yegaHintInput"
+                type="number"
+                min="80"
+                max="120"
+                step="0.001"
+                inputmode="decimal"
+                placeholder="예: 100.250 · 비우면 이력 중앙값"
+              />
+            </label>
+            <label class="field">
+              <span>A값 (원) · 시설공사 적격</span>
+              <input id="aValueInput" type="number" min="0" step="1" inputmode="numeric" placeholder="없으면 비움" />
+            </label>
+            <label class="field">
+              <span>순공사원가 (원)</span>
+              <input id="netCostInput" type="number" min="0" step="1" inputmode="numeric" placeholder="해당 시 입력" />
+            </label>
+            <label class="field">
+              <span>업무구분</span>
+              <select id="categoryInput" aria-label="업무구분">
+                <option value="용역">용역</option>
+                <option value="공사">공사</option>
+                <option value="물품">물품</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>업종 (인포·공고 업종)</span>
+              <input id="industryInput" type="text" list="industryList" placeholder="예: 안전진단, 석면해체, 토목" autocomplete="off" />
+              <datalist id="industryList">
+                <option value="안전진단"></option>
+                <option value="석면해체"></option>
+                <option value="건물위생관리업"></option>
+                <option value="토목"></option>
+                <option value="토건"></option>
+                <option value="건축"></option>
+                <option value="기계가스"></option>
+                <option value="소프트웨어"></option>
+                <option value="통신"></option>
+                <option value="노동"></option>
+              </datalist>
+            </label>
+            <label class="field">
+              <span>투찰마감</span>
+              <input id="deadlineInput" type="text" placeholder="예: 26.11.25 10:00" />
+            </label>
+            <label class="field">
               <span>지역</span>
               <select id="regionInput" aria-label="지역">
                 <option value="경기">경기</option>
                 <option value="서울">서울</option>
                 <option value="인천">인천</option>
                 <option value="경남">경남</option>
+                <option value="부산">부산</option>
+                <option value="충북">충북</option>
+                <option value="강원">강원</option>
+                <option value="광주">광주</option>
+                <option value="세종">세종</option>
+                <option value="전국">전국</option>
                 <option value="기타">기타</option>
               </select>
             </label>
             <label class="field">
-              <span>종류 (목록 고르기 · 직접 입력 가능)</span>
+              <span>종류 (목록·직접 입력)</span>
               <input
                 id="kindInput"
                 type="text"
@@ -116,6 +170,10 @@
               <span>동일공고 키 (재공고 묶기, 비우면 공고명으로 추정)</span>
               <input id="noticeKeyInput" type="text" placeholder="예: gg-old-hall-asbestos" />
             </label>
+          </div>
+          <div class="formula-note hint">
+            인포21C 정리 항목 반영: <strong>예가사정율</strong>(예정÷기초) · <strong>A값</strong> · <strong>순공사원가</strong> ·
+            <strong>투찰률</strong>(낙찰÷예정, 나라장터 표시). D안은 하한밀착 산식입니다.
           </div>
           <div class="notice-grid notice-live" id="noticeDetail"></div>
         </section>
@@ -190,9 +248,10 @@
             <label class="field">
               <span>선택</span>
               <select id="decisionSource" aria-label="최종 선택 출처">
-                <option value="A">A · 동일종류 낙찰</option>
-                <option value="B">B · 1년 고확률 구간</option>
-                <option value="C">C · 동일·유사 공고 이력</option>
+                <option value="A">A · 동일종류 투찰률</option>
+                <option value="B">B · 1년 투찰률 고확률</option>
+                <option value="C">C · 동일·유사 공고</option>
+                <option value="D">D · 하한밀착(예가×하한·A값)</option>
                 <option value="custom">직접 입력</option>
               </select>
             </label>

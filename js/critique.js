@@ -68,6 +68,37 @@ export function critiqueCalc(notice, calc, decision = {}) {
   if (!(floorRate > 0)) {
     issues.push(issue("warn", "NO_FLOOR", "낙찰하한율이 없습니다. 하한 미만 무효를 검증할 수 없습니다."));
   }
+  if (notice.category === "공사" && !(Number(notice.aValue) > 0)) {
+    issues.push(
+      issue(
+        "caution",
+        "CHECK_A",
+        "공사 공고입니다. 적격·A값 적용 공고면 원문에서 A값(연금·보험·안전관리비 등 합)을 확인해 D안에 넣으세요.",
+      ),
+    );
+  }
+  if (calc.yegaFromNotice == null && !(calc.stats?.yegaN > 0) && !(notice.yegaRateHint > 0)) {
+    issues.push(
+      issue(
+        "warn",
+        "NO_YEGA",
+        "예가사정율(예정÷기초) 근거가 없습니다. 인포식 하한밀착(D안)은 예가 추정 없이 못 씁니다. 예정가·예상 예가사정율을 넣으세요.",
+      ),
+    );
+  }
+  if (Number(notice.netCost) > 0 && calc.formula?.rows?.length) {
+    const hug = calc.formula.rows.find((r) => r.id === "floorHug");
+    const net = calc.formula.rows.find((r) => r.id === "netCost");
+    if (hug && net && net.bid > hug.bid * 1.001) {
+      issues.push(
+        issue(
+          "warn",
+          "NET_COST_HIGHER",
+          `순공사원가 산식(${Math.round(net.bid).toLocaleString("ko-KR")}원)이 하한밀착보다 높습니다. 낮은 쪽으로 내면 순공사 98% 룰에 걸릴 수 있습니다.`,
+        ),
+      );
+    }
+  }
 
   // —— 표본 품질 ——
   const kindN = calc.stats?.kindN || 0;

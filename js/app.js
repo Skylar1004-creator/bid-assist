@@ -28,6 +28,12 @@ const els = {
   baseInput: document.getElementById("baseInput"),
   plannedInput: document.getElementById("plannedInput"),
   floorRateInput: document.getElementById("floorRateInput"),
+  yegaHintInput: document.getElementById("yegaHintInput"),
+  aValueInput: document.getElementById("aValueInput"),
+  netCostInput: document.getElementById("netCostInput"),
+  categoryInput: document.getElementById("categoryInput"),
+  industryInput: document.getElementById("industryInput"),
+  deadlineInput: document.getElementById("deadlineInput"),
   regionInput: document.getElementById("regionInput"),
   kindInput: document.getElementById("kindInput"),
   noticeKeyInput: document.getElementById("noticeKeyInput"),
@@ -75,6 +81,11 @@ function readNotice() {
   const plannedAmount = Number.isFinite(plannedRaw) && plannedRaw > 0 ? plannedRaw : null;
   const floorPct = Number(els.floorRateInput.value);
   const floorRate = Number.isFinite(floorPct) && floorPct > 0 ? floorPct / 100 : 0;
+  const yegaHintPct = Number(els.yegaHintInput?.value);
+  const yegaRateHint =
+    Number.isFinite(yegaHintPct) && yegaHintPct > 0 ? yegaHintPct / 100 : null;
+  const aValue = Number(els.aValueInput?.value) || 0;
+  const netCost = Number(els.netCostInput?.value) || 0;
   const region = els.regionInput.value || inferRegion(agency);
   // 공고명 단서 > 선택값 (청소인데 석면이 남는 일 차단)
   const kind = resolveNoticeKind(title, els.kindInput.value);
@@ -89,6 +100,12 @@ function readNotice() {
     baseAmount,
     plannedAmount,
     floorRate,
+    yegaRateHint,
+    aValue,
+    netCost,
+    category: els.categoryInput?.value || "용역",
+    industry: (els.industryInput?.value || "").trim() || null,
+    deadline: (els.deadlineInput?.value || "").trim() || null,
     region,
     kind,
     noticeKey,
@@ -102,18 +119,44 @@ function readInputs() {
   };
 }
 
-function renderNoticeLive(notice) {
+function renderNoticeLive(notice, calc) {
   const floorAmt = notice.baseAmount * notice.floorRate;
   const ref = notice.plannedAmount || notice.baseAmount;
+  const yega =
+    calc?.yegaFromNotice != null
+      ? calc.yegaFromNotice
+      : calc?.yegaRate != null
+        ? calc.yegaRate
+        : null;
+  const floorHug = calc?.formula?.recommended?.bid;
   els.noticeDetail.innerHTML = `
+    <div class="metric"><span class="label">업무·업종</span><span class="value">${
+      notice.category || "-"
+    }${notice.industry ? ` · ${notice.industry}` : ""}</span></div>
     <div class="metric"><span class="label">적용 지역</span><span class="value">${notice.region}</span></div>
     <div class="metric"><span class="label">적용 종류</span><span class="value">${notice.kind}</span></div>
-    <div class="metric"><span class="label">하한 금액</span><span class="value">${
+    <div class="metric"><span class="label">투찰마감</span><span class="value">${
+      notice.deadline || "-"
+    }</span></div>
+    <div class="metric"><span class="label">기초×하한(단순)</span><span class="value">${
       notice.baseAmount && notice.floorRate ? won(floorAmt) : "-"
+    }</span></div>
+    <div class="metric"><span class="label">예가사정율</span><span class="value">${
+      yega == null ? "-" : `${(yega * 100).toFixed(3)}%`
+    }</span></div>
+    <div class="metric"><span class="label">하한밀착(D)</span><span class="value">${
+      floorHug != null ? won(floorHug) : "-"
     }</span></div>
     <div class="metric"><span class="label">산정 기준액</span><span class="value">${
       ref
         ? `${won(ref)}${notice.plannedAmount ? " (예정가)" : " (기초·예정가 미입력)"}`
+        : "-"
+    }</span></div>
+    <div class="metric"><span class="label">A값 / 순공사</span><span class="value">${
+      notice.aValue > 0 || notice.netCost > 0
+        ? `${notice.aValue > 0 ? won(notice.aValue) : "-"} / ${
+            notice.netCost > 0 ? won(notice.netCost) : "-"
+          }`
         : "-"
     }</span></div>
     <div class="metric"><span class="label">동일공고 키</span><span class="value">${
@@ -159,7 +202,7 @@ function renderHistory(calc, notice) {
     <div class="metric"><span class="label">1안 표본</span><span class="value">${calc.stats.kindN}건 · ${
       calc.stats.kindScope || "-"
     }</span></div>
-    <div class="metric"><span class="label">1안 중앙 사정률(÷예정가)</span><span class="value">${
+    <div class="metric"><span class="label">1안 중앙 투찰률(÷예정가)</span><span class="value">${
       calc.stats.kindP50 == null ? "-" : pct(calc.stats.kindP50)
     }</span></div>
     <div class="metric"><span class="label">2안 1년 표본</span><span class="value">${calc.stats.yearN}건 · ${
@@ -168,6 +211,9 @@ function renderHistory(calc, notice) {
     <div class="metric"><span class="label">3안 범위</span><span class="value">${
       calc.stats.sameScope || "-"
     } ${calc.stats.sameN}건</span></div>
+    <div class="metric"><span class="label">예가사정율 중앙(이력)</span><span class="value">${
+      calc.stats.yegaP50 == null ? "-" : pct(calc.stats.yegaP50)
+    }${calc.stats.yegaN ? ` · ${calc.stats.yegaN}건` : ""}</span></div>
   `;
 
   els.historyTabs?.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -253,13 +299,15 @@ function renderPlans(plans) {
     input.addEventListener("change", () => {
       state.selectedPlan = input.value;
       els.decisionSource.value = input.value;
-      const tabMap = { A: "kind", B: "year", C: "same" };
+      const tabMap = { A: "kind", B: "year", C: "same", D: "kind" };
       state.historyTab = tabMap[input.value] || state.historyTab;
       syncFinalFromSource();
       renderPlans(state.plans);
       if (state.calc) {
-        renderHistory(state.calc, readNotice());
-        renderCritique(readNotice(), state.calc);
+        const n = readNotice();
+        renderHistory(state.calc, n);
+        renderNoticeLive(n, state.calc);
+        renderCritique(n, state.calc);
       }
     });
   });
@@ -285,6 +333,12 @@ function saveDraft() {
     base: els.baseInput.value,
     planned: els.plannedInput?.value || "",
     floorRate: els.floorRateInput.value,
+    yegaHint: els.yegaHintInput?.value || "",
+    aValue: els.aValueInput?.value || "",
+    netCost: els.netCostInput?.value || "",
+    category: els.categoryInput?.value || "용역",
+    industry: els.industryInput?.value || "",
+    deadline: els.deadlineInput?.value || "",
     region: els.regionInput.value,
     kind: els.kindInput.value,
     noticeKey: els.noticeKeyInput.value,
@@ -306,6 +360,12 @@ function loadDraft() {
     els.baseInput.value = d.base ?? "";
     if (els.plannedInput) els.plannedInput.value = d.planned ?? "";
     els.floorRateInput.value = d.floorRate ?? "";
+    if (els.yegaHintInput) els.yegaHintInput.value = d.yegaHint ?? "";
+    if (els.aValueInput) els.aValueInput.value = d.aValue ?? "";
+    if (els.netCostInput) els.netCostInput.value = d.netCost ?? "";
+    if (els.categoryInput && d.category) els.categoryInput.value = d.category;
+    if (els.industryInput) els.industryInput.value = d.industry ?? "";
+    if (els.deadlineInput) els.deadlineInput.value = d.deadline ?? "";
     if (d.region) els.regionInput.value = d.region;
     if (d.kind) els.kindInput.value = d.kind;
     els.noticeKeyInput.value = d.noticeKey ?? "";
@@ -349,7 +409,7 @@ function refresh() {
     els.decisionSource.value = state.selectedPlan;
   }
 
-  renderNoticeLive(notice);
+  renderNoticeLive(notice, calc);
   renderHistory(calc, notice);
   renderPlans(calc.plans);
   if (els.decisionSource.value !== "custom") syncFinalFromSource();
@@ -557,12 +617,18 @@ function bind() {
     "baseInput",
     "plannedInput",
     "floorRateInput",
+    "yegaHintInput",
+    "aValueInput",
+    "netCostInput",
+    "categoryInput",
+    "industryInput",
+    "deadlineInput",
     "regionInput",
     "kindInput",
     "noticeKeyInput",
     "costInput",
     "minMarginInput",
-  ];
+  ].filter((key) => els[key]);
 
   noticeFields.forEach((key) => {
     els[key].addEventListener("input", refresh);
@@ -598,7 +664,7 @@ function bind() {
   els.decisionSource.addEventListener("change", () => {
     if (els.decisionSource.value !== "custom") {
       state.selectedPlan = els.decisionSource.value;
-      const tabMap = { A: "kind", B: "year", C: "same" };
+      const tabMap = { A: "kind", B: "year", C: "same", D: "kind" };
       state.historyTab = tabMap[state.selectedPlan] || state.historyTab;
     }
     syncFinalFromSource();

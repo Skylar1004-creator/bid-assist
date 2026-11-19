@@ -477,6 +477,14 @@ tbody tr:last-child td {
   color: var(--danger);
 }
 
+.formula-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f3f1ec;
+  line-height: 1.45;
+}
+
 .critique-box {
   border-radius: 12px;
   padding: 16px 18px;

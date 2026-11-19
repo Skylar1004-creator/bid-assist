@@ -1,6 +1,20 @@
 /** 산정 기준 3안 — 지역 표본이 부족하면 전국·유사종류로 넓힘
- * 사정률(투찰률) = 낙찰가 ÷ 예정가격 (나라장터 표시와 동일, 기초금액 대비 아님)
+ * 투찰률(낙찰률) = 낙찰가 ÷ 예정가격 (나라장터 개찰 표시)
+ * 예가사정율 = 예정가격 ÷ 기초금액 (인포21C·복수예가 분석)
  */
+
+import {
+  bidWithAValue,
+  bidFloorHug,
+  historyYegaRates,
+  pickBidCandidates,
+  yegaRate as calcYegaRate,
+} from "./bid-formula.js";
+
+function bidFloorRange(base, yega, floorRate, aValue) {
+  if (aValue > 0) return bidWithAValue(base, yega, floorRate, aValue);
+  return bidFloorHug(base, yega, floorRate);
+}
 
 /** 나라장터 사정률 재현: 낙찰 ÷ 예정가 */
 export function officialBidRate(award, planned) {
@@ -359,13 +373,19 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
   const resolvedKind = resolveNoticeKind(notice.title, notice.kind);
   notice = { ...notice, kind: resolvedKind };
 
-  const floor = notice.baseAmount > 0 && notice.floorRate > 0 ? notice.baseAmount * notice.floorRate : 0;
+  const floorRate = notice.floorRate || 0;
+  // 단순 기초×하한 (예가 무시) — 참고용. 실제 하한은 예정×하한에 가깝다.
+  const floor = notice.baseAmount > 0 && floorRate > 0 ? notice.baseAmount * floorRate : 0;
   const minOk = cost * (1 + minMarginPct / 100);
   const ref = bidReferenceAmount(notice);
   const usedPlanned = Boolean(
     (notice.plannedAmount != null && notice.plannedAmount > 0) ||
       (notice.planned != null && notice.planned > 0)
   );
+  const plannedAmt =
+    notice.plannedAmount > 0 ? notice.plannedAmount : notice.planned > 0 ? notice.planned : null;
+  const aValue = Number(notice.aValue) > 0 ? Number(notice.aValue) : 0;
+  const netCost = Number(notice.netCost) > 0 ? Number(notice.netCost) : 0;
 
   const kindPack = sameKindCases(notice, history, asOf);
   const kindCases = guardKindCases(kindPack.cases, resolvedKind);
@@ -408,8 +428,38 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     : null;
 
   const pct = (n) => `${(n * 100).toFixed(2)}%`;
-  const rateNote = usedPlanned ? "예정가×사정률" : "기초×사정률(예정가 미입력)";
-  const floorRate = notice.floorRate || 0;
+  const rateNote = usedPlanned ? "예정가×투찰률" : "기초×투찰률(예정가 미입력)";
+
+  // —— 인포21C식: 예가사정율 → 하한밀착·A값·순공사 ——
+  const yegaFromNotice = calcYegaRate(plannedAmt, notice.baseAmount);
+  const yegaFromHist = historyYegaRates(kindCases);
+  const yegaP50 = quantile(yegaFromHist, 0.5);
+  const yegaP25 = quantile(yegaFromHist, 0.25);
+  const yegaP75 = quantile(yegaFromHist, 0.75);
+  const yega =
+    yegaFromNotice != null
+      ? yegaFromNotice
+      : notice.yegaRateHint > 0
+        ? notice.yegaRateHint
+        : yegaP50;
+  const formulaPack = pickBidCandidates({
+    base: notice.baseAmount,
+    yega,
+    floorRate,
+    aValue,
+    netCost,
+  });
+  const bidD = formulaPack.recommended?.bid ?? null;
+  const rangeD =
+    yegaP25 != null && yegaP75 != null && notice.baseAmount > 0 && floorRate > 0
+      ? [
+          bidFloorRange(notice.baseAmount, yegaP25, floorRate, aValue),
+          bidFloorRange(notice.baseAmount, yegaP75, floorRate, aValue),
+        ]
+      : bidD != null
+        ? [bidD * 0.997, bidD * 1.003]
+        : null;
+  const formulaOk = bidD != null && yega != null && floorRate > 0;
 
   const flag = (bid, planId) => {
     if (bid == null) return { kind: "warn", text: "표본 부족 · 맹신 금지" };
@@ -425,6 +475,9 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     if (planId === "C" && String(samePack.scope || "").startsWith("유사")) {
       return { kind: "warn", text: "동일공고 아님 · 유사만" };
     }
+    if (planId === "D" && yegaFromNotice == null && yegaP50 == null) {
+      return { kind: "warn", text: "예가사정율 추정 근거 약함" };
+    }
     return { kind: "ok", text: "하한·원가 통과 · 대조 필요" };
   };
 
@@ -433,6 +486,11 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     minOk,
     refAmount: ref,
     usedPlanned,
+    yegaRate: yega,
+    yegaFromNotice,
+    aValue,
+    netCost,
+    formula: formulaPack,
     kindCases,
     year: { ...year, yearCases: year.yearCases || [] },
     sameAll,
@@ -446,6 +504,10 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
       yearScope: year.scope,
       sameN: sameAll.length,
       sameScope: samePack.scope,
+      yegaN: yegaFromHist.length,
+      yegaP50,
+      yegaP25,
+      yegaP75,
     },
     plans: [
       {
@@ -484,6 +546,28 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
         range: rangeC,
         flag: flag(bidC, "C"),
         disabled: !sameOk,
+      },
+      {
+        id: "D",
+        name: "하한밀착(예가×하한)",
+        why: formulaOk
+          ? [
+              yegaFromNotice != null
+                ? `예가사정율(예정÷기초) ${pct(yega)} · 공고 확정`
+                : yegaP50 != null
+                  ? `예가사정율 추정 중앙값 ${pct(yega)} · 이력 ${yegaFromHist.length}건`
+                  : `예가사정율 ${pct(yega)}`,
+              aValue > 0 ? `A값 ${Math.round(aValue).toLocaleString("ko-KR")}원 반영` : null,
+              netCost > 0 ? `순공사원가 산식과 비교 후 높은 쪽` : null,
+              formulaPack.recommended ? `적용: ${formulaPack.recommended.name}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "예가사정율 또는 하한율이 없어 인포식 하한밀착을 못 만듭니다.",
+        bid: bidD,
+        range: rangeD,
+        flag: flag(bidD, "D"),
+        disabled: !formulaOk,
       },
     ],
   };
