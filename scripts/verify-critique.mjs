@@ -41,13 +41,11 @@ const asOf = new Date("2026-11-19");
     region: "경남",
     noticeKey: "gimhae-donggwang-asbestos",
   };
-  const calc = calcPlans(notice, hist, { asOf, cost: 11_000_000, minMarginPct: 4 });
+  const calc = calcPlans(notice, hist, { asOf });
   const plan = calc.plans.find((p) => !p.disabled);
   const c = critiqueCalc(notice, calc, {
     finalBid: plan?.bid,
     source: plan?.id,
-    cost: 11_000_000,
-    minMarginPct: 4,
   });
   assert(c.tone !== "reject", "정상 석면 산정은 reject 아님");
   assert(c.score >= 40, "점수 하한");

@@ -44,8 +44,8 @@ const asOf = new Date("2026-11-19");
     method: "전자입찰(최저가)",
     noticeKey: "gimhae-donggwang-asbestos",
   };
-  const calc = calcPlans(notice, hist, { asOf, cost: 11_000_000, minMarginPct: 4 });
-  const v = buildVerdict(notice, calc, { cost: 11_000_000, minMarginPct: 4 });
+  const calc = calcPlans(notice, hist, { asOf });
+  const v = buildVerdict(notice, calc);
   assert(v.status === "ready", "석면 근거 있으면 ready");
   assert(v.bid > 0, "투찰가 산출");
   assert(v.evidence?.length >= 1, "객관 근거 필수");
@@ -59,7 +59,7 @@ const asOf = new Date("2026-11-19");
   console.log("verdict", v.planId, v.bid, v.confidence, v.judgment);
 }
 
-// 3) 원가수용선이 과도하면 해당 후보 탈락 또는 blocked
+// 3) 원가는 무시 — 산정만 되면 ready
 {
   const notice = {
     title: "김해동광초 석면농도",
@@ -70,12 +70,11 @@ const asOf = new Date("2026-11-19");
     region: "경남",
     method: "전자입찰(최저가)",
   };
-  const cost = 20_000_000;
-  const calc = calcPlans(notice, hist, { asOf, cost, minMarginPct: 10 });
-  const v = buildVerdict(notice, calc, { cost, minMarginPct: 10 });
-  assert(v.status === "ready", "원가 미달이어도 선정 금액은 표시");
-  assert(v.ai?.costRisk || v.bid < cost * 1.1, "적자 경고 표기");
-  console.log("cost-gate", v.status, v.bid, "costRisk", v.ai?.costRisk);
+  const calc = calcPlans(notice, hist, { asOf });
+  const v = buildVerdict(notice, calc);
+  assert(v.status === "ready" && v.bid > 0, "원가 무관 ready");
+  assert(!v.ai?.costRisk, "원가 경고 없음");
+  console.log("no-cost", v.status, v.bid);
 }
 
 if (process.exitCode) {

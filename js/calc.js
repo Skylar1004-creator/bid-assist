@@ -393,13 +393,12 @@ export function sameNoticeHistory(notice, history) {
   return { scope: guarded.length ? `유사·${kind} 낙찰` : "없음", cases: guarded };
 }
 
-export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = new Date() } = {}) {
+export function calcPlans(notice, history, { asOf = new Date() } = {}) {
   const resolvedKind = resolveNoticeKind(notice.title, notice.kind);
   notice = { ...notice, kind: resolvedKind };
 
   const floorRate = notice.floorRate || 0;
   const base = notice.baseAmount > 0 ? notice.baseAmount : 0;
-  const minOk = cost * (1 + minMarginPct / 100);
   const usedPlanned = Boolean(
     (notice.plannedAmount != null && notice.plannedAmount > 0) ||
       (notice.planned != null && notice.planned > 0)
@@ -509,7 +508,6 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     if (baseIsProxy) return { kind: "danger", text: "기초가 추정·예산 대리값 · 인포와 어긋남" };
     if (bid == null) return { kind: "warn", text: "표본 부족 · 맹신 금지" };
     if (floor > 0 && bid + 0.5 < floor) return { kind: "danger", text: "하한 미만 · 무효" };
-    if (cost > 0 && bid < minOk) return { kind: "warn", text: "원가·마진 미달" };
     const rate = ref > 0 ? bid / ref : null;
     if (rate != null && floorRate > 0 && rate < floorRate) {
       return { kind: "danger", text: "사정률 < 하한율" };
@@ -523,13 +521,12 @@ export function calcPlans(notice, history, { cost = 0, minMarginPct = 0, asOf = 
     if (planId === "D" && yegaFromNotice == null && yegaP50 == null) {
       return { kind: "warn", text: "예가사정율 추정 근거 약함" };
     }
-    return { kind: "ok", text: "하한·원가 통과 · 대조 필요" };
+    return { kind: "ok", text: "하한 통과 · 대조 필요" };
   };
 
   return {
     floor,
     floorSimple,
-    minOk,
     baseAmount: base,
     baseIsProxy,
     baseSource: notice.baseSource || (baseIsProxy ? "proxy" : base > 0 ? "manual" : null),

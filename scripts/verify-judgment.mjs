@@ -57,7 +57,6 @@ assert(agreementScore([100, 110], 100) < 0.5, "합의 낮음");
     yega: 1.01,
     hardFloor: 9_090_000,
     mode: "low",
-    minOk: 0,
     competitionShare: 0.5,
     planBids: [9_100_000, 9_200_000, 9_150_000],
     histBids: [9_120_000, 9_180_000],
@@ -74,18 +73,16 @@ assert(agreementScore([100, 110], 100) < 0.5, "합의 낮음");
 }
 
 {
-  const warn = aiFinalize({
+  const ok = aiFinalize({
     base: 10_000_000,
     ref: 10_000_000,
     hardFloor: 9_000_000,
     mode: "low",
-    minOk: 15_000_000,
     planBids: [9_100_000],
     histBids: [],
     anchorBid: 9_100_000,
   });
-  assert(warn.ok && warn.costRisk, "원가선 미달해도 금액은 선정·경고");
-  assert(warn.bid >= 9_000_000, "하한 이상 금액 유지");
+  assert(ok.ok && ok.bid >= 9_000_000, "원가 없이 선정");
 }
 
 if (process.exitCode) {

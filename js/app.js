@@ -41,8 +41,6 @@ const els = {
   kindInput: document.getElementById("kindInput"),
   noticeKeyInput: document.getElementById("noticeKeyInput"),
   noticeDetail: document.getElementById("noticeDetail"),
-  costInput: document.getElementById("costInput"),
-  minMarginInput: document.getElementById("minMarginInput"),
   historySummary: document.getElementById("historySummary"),
   histStats: document.getElementById("histStats"),
   historyBody: document.getElementById("historyBody"),
@@ -131,13 +129,6 @@ function readNotice() {
     region,
     kind,
     noticeKey,
-  };
-}
-
-function readInputs() {
-  return {
-    cost: Number(els.costInput.value) || 0,
-    minMargin: Number(els.minMarginInput.value) || 0,
   };
 }
 
@@ -267,11 +258,7 @@ function renderHistory(calc, notice) {
 
 function renderVerdict(notice, calc) {
   if (!els.verdictBox) return;
-  const inputs = readInputs();
-  const v = buildVerdict(notice, calc, {
-    cost: inputs.cost,
-    minMarginPct: inputs.minMargin,
-  });
+  const v = buildVerdict(notice, calc);
   state.verdict = v;
 
   if (v.status === "blocked") {
@@ -287,8 +274,7 @@ function renderVerdict(notice, calc) {
     return;
   }
 
-  const costRisk = Boolean(v.ai?.costRisk);
-  els.verdictBox.className = `verdict-box is-ready${costRisk ? " is-cost-risk" : ""}`;
+  els.verdictBox.className = "verdict-box is-ready";
   const agg = v.aggregation;
   const ai = v.ai || {};
   const conf = Math.max(0, Math.min(100, v.confidence || 0));
@@ -319,11 +305,6 @@ function renderVerdict(notice, calc) {
     <p class="verdict-kicker">AI가 고른 투찰가 · 1개</p>
     <p class="verdict-bid" id="aiSelectedBid">${won(v.bid)}</p>
     <p class="verdict-head">${v.judgment || v.headline}</p>
-    ${
-      costRisk
-        ? `<p class="verdict-warn" role="alert">원가·마진 수용선보다 낮습니다. 금액은 선정됐지만 적자 위험이 있습니다. 실행원가를 확인하세요.</p>`
-        : ""
-    }
     <div class="trust" aria-label="신뢰도 ${conf}">
       <div class="trust-bar"><span style="width:${conf}%"></span></div>
       <span class="trust-label">신뢰 ${conf}</span>
@@ -380,12 +361,9 @@ function renderVerdict(notice, calc) {
 
 function renderCritique(notice, calc) {
   if (!els.critiqueBox) return;
-  const inputs = readInputs();
   const c = critiqueCalc(notice, calc, {
     finalBid: Number(els.finalBid.value) || null,
     source: els.decisionSource.value,
-    cost: inputs.cost,
-    minMarginPct: inputs.minMargin,
   });
   state.critique = c;
   if (els.critiqueHint) {
@@ -483,8 +461,6 @@ function saveDraft() {
     region: els.regionInput.value,
     kind: els.kindInput.value,
     noticeKey: els.noticeKeyInput.value,
-    cost: els.costInput.value,
-    minMargin: els.minMarginInput.value,
   };
   localStorage.setItem(state.draftKey, JSON.stringify(draft));
 }
@@ -510,8 +486,6 @@ function loadDraft() {
     if (d.region) els.regionInput.value = d.region;
     if (d.kind) els.kindInput.value = d.kind;
     els.noticeKeyInput.value = d.noticeKey ?? "";
-    if (d.cost) els.costInput.value = d.cost;
-    if (d.minMargin) els.minMarginInput.value = d.minMargin;
     return true;
   } catch {
     return false;
@@ -536,17 +510,7 @@ function refresh() {
   applyInference();
   saveDraft();
   const notice = readNotice();
-  // 기초≪원가(이전 공고 잔존)면 원가를 기초 기준으로 자동 보정
-  if (notice.baseAmount > 0) {
-    const costNow = Number(els.costInput.value) || 0;
-    if (costNow <= 0 || costNow > notice.baseAmount * 1.35) {
-      els.costInput.value = String(Math.round(notice.baseAmount * 0.85));
-    }
-  }
-  const inputs = readInputs();
   const calc = calcPlans(notice, state.history, {
-    cost: inputs.cost,
-    minMarginPct: inputs.minMargin,
     asOf: asOfDate(),
   });
   state.calc = calc;
@@ -608,11 +572,6 @@ function applyNotice(n) {
   if (n.kind) els.kindInput.value = n.kind;
   els.noticeKeyInput.value = n.noticeKey || n.refNo || n.bidNtceNo || "";
   delete els.noticeKeyInput.dataset.manual;
-  // 기초가 바뀌면 원가도 맞춘다(이전 공고 원가가 남아 AI 추천이 전부 적자로 막히는 것 방지)
-  if (n.baseAmount != null && n.baseAmount > 0) {
-    els.costInput.value = String(Math.round(n.baseAmount * 0.85));
-  }
-  if (!els.minMarginInput.value) els.minMarginInput.value = "4";
   if (n.refNo) els.lookupInput.value = n.refNo;
   els.lookupResults.hidden = true;
   els.lookupResults.innerHTML = "";
@@ -759,8 +718,6 @@ function setExample() {
   els.regionInput.value = "경기";
   els.kindInput.value = "";
   els.noticeKeyInput.value = "";
-  els.costInput.value = "";
-  els.minMarginInput.value = "4";
   delete els.noticeKeyInput.dataset.manual;
 }
 
@@ -799,8 +756,6 @@ function bind() {
     "regionInput",
     "kindInput",
     "noticeKeyInput",
-    "costInput",
-    "minMarginInput",
   ].filter((key) => els[key]);
 
   noticeFields.forEach((key) => {

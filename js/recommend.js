@@ -42,11 +42,9 @@ function caseCite(c) {
 /**
  * @param {object} notice
  * @param {object} calc calcPlans 결과
- * @param {{ cost?: number, minMarginPct?: number }} opts
+ * @param {object} [_opts] 호환용(원가 무시)
  */
-export function buildVerdict(notice, calc, opts = {}) {
-  const cost = opts.cost || 0;
-  const minOk = cost > 0 ? cost * (1 + (opts.minMarginPct || 0) / 100) : 0;
+export function buildVerdict(notice, calc, _opts = {}) {
   const base = notice.baseAmount > 0 ? notice.baseAmount : calc.baseAmount || 0;
   const yega = calc.yegaRate != null && calc.yegaRate > 0 ? calc.yegaRate : 1;
   const ref = calc.refAmount || (base > 0 ? base * yega : 0);
@@ -133,17 +131,6 @@ export function buildVerdict(notice, calc, opts = {}) {
         reason: `금액 ${won(row.bid)} < 실질하한 ${won(hardFloor)} → 무효`,
       });
       return;
-    }
-    // 원가 미달은 탈락이 아니라 경고 — 금액 1개는 그래도 보여 준다
-    if (minOk > 0 && row.bid < minOk) {
-      row.costRisk = true;
-      row.evidence = [
-        ...(row.evidence || []),
-        {
-          type: "cost-risk",
-          text: `원가수용선 ${won(minOk)} 미만 · 이기면 적자 가능`,
-        },
-      ];
     }
     if (!row.evidence?.length) {
       rejected.push({ id: row.id, reason: "객관 근거 목록이 비어 추천 불가" });
@@ -383,7 +370,6 @@ export function buildVerdict(notice, calc, opts = {}) {
     yega,
     hardFloor,
     mode,
-    minOk,
     competitionShare: calc.year?.share || calc.stats?.yearShare || 0.3,
     planBids,
     histBids,
@@ -475,7 +461,6 @@ export function buildVerdict(notice, calc, opts = {}) {
     method: "AI",
     hardFloor,
     mode,
-    costRisk: Boolean(ai.costRisk),
     aggregation: agg,
     ai,
     scored: candidates.map((c) => ({

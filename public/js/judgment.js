@@ -133,7 +133,6 @@ export function agreementScore(bids, ref) {
  *   yega: number,
  *   hardFloor: number,
  *   mode: "low"|"qualify",
- *   minOk: number,
  *   competitionShare?: number,
  *   planBids: number[],
  *   histBids: number[],
@@ -149,7 +148,6 @@ export function aiFinalize(input) {
     ref,
     hardFloor,
     mode = "low",
-    minOk = 0,
     competitionShare = 0.3,
     planBids = [],
     histBids = [],
@@ -242,14 +240,6 @@ export function aiFinalize(input) {
     raw = Math.ceil(hardFloor);
     reasons.push("실질하한 미만 → 하한으로 보정");
   }
-  let costRisk = false;
-  if (minOk > 0 && raw < minOk) {
-    costRisk = true;
-    reasons.push(
-      `원가수용선 미달 경고 (${Math.round(raw).toLocaleString("ko-KR")} < ${Math.round(minOk).toLocaleString("ko-KR")}) · 금액은 산정하되 적자 위험`,
-    );
-  }
-
   // floorHug가 있고 선정형인데 너무 멀면 경고만 (금액은 유지)
   if (mode === "low" && floorHugBid > 0 && ref > 0) {
     const drift = Math.abs(raw - floorHugBid) / ref;
@@ -273,7 +263,6 @@ export function aiFinalize(input) {
   if (hardFloor > 0 && vsFloorWon != null && vsFloorWon >= 0 && vsFloorWon / (ref || base) <= 0.005) {
     confidence += 5;
   }
-  if (costRisk) confidence -= 18;
   confidence = Math.round(clamp(confidence, 20, 97));
 
   const judgment =
@@ -282,17 +271,16 @@ export function aiFinalize(input) {
           vsBasePct == null ? "—" : `${(vsBasePct * 100).toFixed(3)}%`
         }, 하한 위 ${
           vsFloorWon == null ? "—" : `${Math.round(vsFloorWon).toLocaleString("ko-KR")}원`
-        }.${costRisk ? " 원가선 미달·적자 위험." : ""}`
+        }.`
       : `선정 투찰가 ${bid.toLocaleString("ko-KR")}원 · 합의 중앙. 기초 대비 ${
           vsBasePct == null ? "—" : `${(vsBasePct * 100).toFixed(3)}%`
-        }.${costRisk ? " 원가선 미달·적자 위험." : ""}`;
+        }.`;
 
   return {
     ok: true,
     bid,
     confidence,
     judgment,
-    costRisk,
     reasons,
     agree,
     cluster,

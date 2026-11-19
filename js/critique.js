@@ -27,7 +27,7 @@ function stddev(values) {
 /**
  * @param {object} notice
  * @param {object} calc calcPlans 결과
- * @param {{ finalBid?: number|null, source?: string, cost?: number, minMarginPct?: number }} decision
+ * @param {{ finalBid?: number|null, source?: string }} decision
  */
 export function critiqueCalc(notice, calc, decision = {}) {
   const issues = [];
@@ -38,8 +38,6 @@ export function critiqueCalc(notice, calc, decision = {}) {
   const plans = (calc.plans || []).filter((p) => !p.disabled && p.bid != null);
   const finalBid = decision.finalBid != null && decision.finalBid > 0 ? Number(decision.finalBid) : null;
   const source = decision.source || null;
-  const cost = decision.cost || 0;
-  const minOk = cost > 0 ? cost * (1 + (decision.minMarginPct || 0) / 100) : 0;
 
   // —— 입력·단위 검증 (기초금액 = 인포21C 축) ——
   if (!(notice.baseAmount > 0)) {
@@ -249,19 +247,6 @@ export function critiqueCalc(notice, calc, decision = {}) {
     if (floor > 0 && finalBid < floor) {
       issues.push(
         issue("danger", "FINAL_FLOOR", `확정가 ${won(finalBid)}는 하한 ${won(floor)} 미만입니다. 내면 탈락·무효입니다.`),
-      );
-    }
-    if (cost > 0 && finalBid < minOk) {
-      issues.push(
-        issue(
-          "danger",
-          "FINAL_MARGIN",
-          `확정가 ${won(finalBid)}는 최소 수용선 ${won(minOk)} 아래입니다. 이기면 적자입니다.`,
-        ),
-      );
-    } else if (cost > 0 && finalBid < cost * 1.03) {
-      issues.push(
-        issue("warn", "THIN_MARGIN", `확정가 마진이 원가 대비 빠듯합니다(원가 ${won(cost)}). 돌발비용 여유를 보세요.`),
       );
     }
     if (plans.length) {
