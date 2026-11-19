@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>사용·산정 설명서 · 투찰 구간 보조</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .doc {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .doc h1 {
+        margin: 0 0 8px;
+        font-size: 1.6rem;
+        letter-spacing: -0.04em;
+      }
+      .doc h2 {
+        margin: 28px 0 10px;
+        font-size: 1.15rem;
+      }
+      .doc h3 {
+        margin: 18px 0 8px;
+        font-size: 1.02rem;
+      }
+      .doc p,
+      .doc li {
+        color: #3f4742;
+        line-height: 1.6;
+      }
+      .doc table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 16px;
+        background: #fff;
+      }
+      .doc th,
+      .doc td {
+        border: 1px solid #c9c2b5;
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .doc th {
+        background: #f0ebe3;
+      }
+      .back {
+        display: inline-flex;
+        margin-bottom: 18px;
+        color: #0d5c4b;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .back:hover {
+        text-decoration: underline;
+      }
+      .panel.doc-panel {
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app doc">
+      <a class="back" href="/">← 투찰 화면으로</a>
+      <section class="panel doc-panel">
+        <h1>사용 설명서 · 산정 근거</h1>
+        <p>
+          사내 의사결정 보조 도구입니다. 자동 투찰·선정 보장이 아니며, 최종 투찰가는
+          담당자가 직접 정합니다. 자격·서류·마감을 확인한 공고만 넣습니다.
+        </p>
+
+        <h2>1. 사용 방법</h2>
+        <h3>공고 불러오기</h3>
+        <ol>
+          <li>나라장터에서 <strong>사업번호</strong>를 복사합니다. (예: R26BK01578429)</li>
+          <li>사업번호 칸에 붙여넣거나 <strong>불러오기</strong>를 누릅니다.</li>
+          <li>공고명·기관·기초금액·하한율·지역·종류가 채워집니다.</li>
+        </ol>
+        <p>없으면 공개 공고에서 다시 찾고, 그래도 없으면 직접 입력합니다.</p>
+
+        <h3>손익 하한 · 3안 · 확정</h3>
+        <ol>
+          <li>실행원가와 최소 수용 마진을 넣습니다. (원가 이하만 경고)</li>
+          <li>A/B/C 추천가·구간·근거를 비교하고, 위 탭으로 표본을 확인합니다.</li>
+          <li>A/B/C/직접입력 중 고른 뒤 확정 투찰가를 저장합니다. (자동 투찰 없음)</li>
+        </ol>
+
+        <h2>2. 산정 근거 3안</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>용어</th>
+              <th>의미</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>기초·추정금액</td>
+              <td>공고에 나온 기초(또는 이에 가까운 공개 금액)</td>
+            </tr>
+            <tr>
+              <td>사정률</td>
+              <td>낙찰가 ÷ 기초·추정금액</td>
+            </tr>
+            <tr>
+              <td>낙찰하한율</td>
+              <td>공고 하한. 추천가가 하한 미만이면 위험 표시</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>A안 · 동일종류 낙찰</h3>
+        <p>과거 낙찰 사정률의 <strong>중앙값</strong>으로 추천합니다.</p>
+        <ol>
+          <li>같은 지역 + 같은 종류</li>
+          <li>부족하면 전국 · 같은 종류</li>
+          <li>그래도 부족하면 전국 · 석면 용역</li>
+        </ol>
+        <p>추천가 = 기초 × P50, 구간 = 기초 × P25~P75</p>
+
+        <h3>B안 · 1년 고확률 구간</h3>
+        <p>최근 1년 석면 낙찰 사정률 중 <strong>가장 많이 몰린 0.5%p 구간</strong>입니다.</p>
+        <ol>
+          <li>같은 지역 · 1년</li>
+          <li>부족하면 전국 · 1년</li>
+        </ol>
+        <p>표본이 아주 적으면 중앙값·P25~P75로 대체합니다.</p>
+
+        <h3>C안 · 동일·유사 공고 이력</h3>
+        <ol>
+          <li>같은 공고·재공고 낙찰</li>
+          <li>없으면 같은 종류·비슷한 금액·유사 측정 낙찰</li>
+        </ol>
+        <p>1건이면 그 사정률, 여러 건이면 중앙값을 씁니다.</p>
+
+        <h2>3. 경고 문구</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>표시</th>
+              <th>의미</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>하한·원가 조건 충족</td>
+              <td>하한·최소 마진 통과</td>
+            </tr>
+            <tr>
+              <td>최소 수용 마진 미달</td>
+              <td>원가+마진보다 낮아 손해 가능</td>
+            </tr>
+            <tr>
+              <td>공고 하한 미만</td>
+              <td>무효·탈락 위험</td>
+            </tr>
+            <tr>
+              <td>표본 부족</td>
+              <td>추천 불가</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>4. 주의</h2>
+        <ul>
+          <li>선정·낙찰을 보장하지 않습니다.</li>
+          <li>낙찰 방식(추첨·소액수의 등)에 따라 가격의 역할이 다릅니다.</li>
+          <li>지역 이력이 적으면 전국으로 넓히므로, 근거에 적힌 범위를 확인하세요.</li>
+          <li>자격·지역·업종 제한은 이 도구 밖에서 확인한 뒤 사용하세요.</li>
+        </ul>
+
+        <h2>5. 체크리스트</h2>
+        <ul>
+          <li>사업번호로 기초·하한 확인</li>
+          <li>실행원가·최소 마진 입력</li>
+          <li>A/B/C 표본·경고 확인</li>
+          <li>담당자가 확정가 선택·저장</li>
+        </ul>
+      </section>
+    </div>
+  </body>
+</html>
